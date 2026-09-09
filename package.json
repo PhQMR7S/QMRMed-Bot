@@ -1,0 +1,28 @@
+{
+  "name": "qmrmed-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone QMRMed Telegram learning bot",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "check": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.15.0",
+    "dotenv": "^17.2.2",
+    "grammy": "^1.38.2",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "prisma": "^6.15.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.2"
+  }
+}
