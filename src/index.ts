@@ -39,7 +39,7 @@ bot.callbackQuery('subjects', async (ctx) => {
   await ctx.editMessageText('📚 *المواد الدراسية*\n\nاختر المادة:', { parse_mode: 'Markdown', reply_markup: subjectMenu(subjects) });
 });
 
-bot.callbackQuery(/^subject:(\\d+)$/, async (ctx) => {
+bot.callbackQuery(/^subject:(\d+)$/, async (ctx) => {
   await ctx.answerCallbackQuery();
   const id = Number(ctx.match[1]);
   const subject = await db.subject.findUnique({ where: { id }, include: { topics: { orderBy: { order: 'asc' }, include: { lessons: { orderBy: { order: 'asc' } } } } } });
