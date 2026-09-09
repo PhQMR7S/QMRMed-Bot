@@ -19,6 +19,7 @@
     "@prisma/client": "^6.19.3",
     "dotenv": "^17.2.2",
     "grammy": "^1.38.2",
+    "unpdf": "^1.8.1",
     "zod": "^4.1.5"
   },
   "devDependencies": {
