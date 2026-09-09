@@ -42,7 +42,7 @@ export async function searchApprovedContent(query: string, options?: {
         ...(options?.subjectName ? { subjectName: options.subjectName } : {}),
       },
       ...(options?.kinds?.length ? { kind: { in: options.kinds } } : {}),
-      AND: terms.map((term) => ({ text: { contains: term } })),
+      OR: terms.map((term) => ({ text: { contains: term } })),
     },
     include: { source: true },
     take,
