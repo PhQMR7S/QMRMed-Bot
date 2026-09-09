@@ -7,10 +7,22 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Plan { FREE PLUS PRO }
-enum AccessKind { FREE_TRIAL SUBSCRIPTION }
+enum Plan {
+  FREE
+  PLUS
+  PRO
+}
 
-enum QuestionType { MCQ TRUE_FALSE SHORT_ANSWER }
+enum AccessKind {
+  FREE_TRIAL
+  SUBSCRIPTION
+}
+
+enum QuestionType {
+  MCQ
+  TRUE_FALSE
+  SHORT_ANSWER
+}
 
 model User {
   id              Int       @id @default(autoincrement())
