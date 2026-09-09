@@ -1,4 +1,5 @@
 import { config } from './config.js';
+import { formatRetrievedContext, searchApprovedContent } from './content-search.js';
 
 export type AIMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
@@ -29,10 +30,16 @@ export async function omniChat(messages: AIMessage[], options?: { model?: string
 }
 
 export async function answerMedicalQuestion(question: string, context = '') {
-  const trustedContext = context.trim();
+  const driveItems = await searchApprovedContent(question, { take: 12 });
+  const driveContext = formatRetrievedContext(driveItems, 12_000);
+  const trustedContext = driveContext || context.trim();
   if (!trustedContext) {
-    return 'لم أجد محتوى معتمدًا من QMRMed مرتبطًا بسؤالك. جرّب البحث أولًا بكلمات أكثر تحديدًا، ولن أقدّم إجابة من خارج المصادر المعتمدة.';
+    return 'لم أجد محتوى معتمدًا من QMRMed مرتبطًا بسؤالك. جرّب كلمات أكثر تحديدًا، ولن أقدّم إجابة من خارج المصادر المعتمدة.';
   }
+
+  const sourceRule = driveContext
+    ? 'المقاطع التالية مسترجعة مباشرة من ملفات QMRMed المعتمدة في Google Drive. اعتمد عليها حصريًا.'
+    : 'السياق التالي هو محتوى QMRMed المتاح حاليًا. اعتمد عليه حصريًا.';
 
   return omniChat([
     {
@@ -40,9 +47,11 @@ export async function answerMedicalQuestion(question: string, context = '') {
       content: [
         'أنت المساعد الدراسي الطبي في QMRMed.',
         'أجب بالعربية الواضحة، وكن دقيقًا ومختصرًا نسبيًا.',
-        'اعتمد حصريًا على السياق المعتمد من QMRMed أدناه.',
+        sourceRule,
         'لا تضف معلومات من معرفتك العامة إذا لم يدعمها السياق.',
-        'لا تخترع مصادر أو مراجع، وإذا لم يكن السياق كافيًا للإجابة فاذكر ذلك بوضوح.',
+        'لا تخترع مصادر أو مراجع. عند ذكر مصدر، استخدم اسم المصدر الموجود في السياق فقط.',
+        'إذا كان السؤال يطلب Case أو أسئلة وزارية، استخرجها أو لخّصها من المحتوى المسترجع ولا تنشئ سؤالًا وزاريًا من عندك.',
+        'إذا كان السياق غير كافٍ، اذكر ذلك بوضوح بدل التخمين.',
         'هذا مساعد تعليمي وليس بديلًا عن الطبيب أو التشخيص الفردي.',
         `السياق المعتمد من QMRMed:\n${trustedContext}`,
       ].join('\n\n'),
