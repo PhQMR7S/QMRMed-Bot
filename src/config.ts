@@ -20,6 +20,11 @@ const env = z.object({
   OMNIROUTE_TIMEOUT_MS: z.coerce.number().int().positive().default(45_000),
   TRIAL_ENABLED: booleanFromEnv.default(true),
   TRIAL_DAYS: z.coerce.number().int().positive().default(7),
+  GOOGLE_DRIVE_ROOT_FOLDER_ID: z.string().optional(),
+  GOOGLE_SERVICE_ACCOUNT_JSON: z.string().optional(),
+  GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: z.string().optional(),
+  DRIVE_AUTO_APPROVE: booleanFromEnv.default(true),
+  DRIVE_CHUNK_CHARS: z.coerce.number().int().min(1000).max(20000).default(6000),
 }).parse(process.env);
 
 export const config = {
