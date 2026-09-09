@@ -12,7 +12,7 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "npm run build && node --test tests/*.test.js"
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.15.0",
