@@ -1,5 +1,6 @@
 import { createSign } from 'node:crypto';
 import { config } from './config.js';
+import { extractText, getDocumentProxy } from 'unpdf';
 
 type ServiceAccount = { client_email: string; private_key: string; token_uri?: string };
 type DriveFile = {
@@ -85,8 +86,6 @@ export async function getDriveFile(fileId: string) {
 export async function listDriveFiles(rootFolderId: string) {
   const result: Array<DriveFile & { path: string }> = [];
   const queue: Array<{ id: string; path: string }> = [{ id: rootFolderId, path: '' }];
-  const folders = new Map<string, string>();
-  folders.set(rootFolderId, '');
 
   while (queue.length) {
     const current = queue.shift()!;
@@ -116,6 +115,15 @@ export async function listDriveFiles(rootFolderId: string) {
   return result;
 }
 
+async function responseTextWithinLimit(response: Response) {
+  const maxBytes = config.DRIVE_MAX_FILE_MB * 1024 * 1024;
+  const contentLength = Number(response.headers.get('content-length') ?? 0);
+  if (contentLength > maxBytes) throw new Error(`Drive file exceeds DRIVE_MAX_FILE_MB (${config.DRIVE_MAX_FILE_MB} MB)`);
+  const buffer = await response.arrayBuffer();
+  if (buffer.byteLength > maxBytes) throw new Error(`Drive file exceeds DRIVE_MAX_FILE_MB (${config.DRIVE_MAX_FILE_MB} MB)`);
+  return new Uint8Array(buffer);
+}
+
 export async function downloadDriveText(file: DriveFile) {
   const googleDoc = file.mimeType === 'application/vnd.google-apps.document';
   const googleSheet = file.mimeType === 'application/vnd.google-apps.spreadsheet';
@@ -132,8 +140,18 @@ export async function downloadDriveText(file: DriveFile) {
     const response = await driveFetch(`/files/${encodeURIComponent(file.id)}/export?mimeType=text/plain`);
     return response.text();
   }
+
+  if (file.mimeType === 'application/pdf') {
+    const response = await driveFetch(`/files/${encodeURIComponent(file.id)}?alt=media&supportsAllDrives=true`);
+    const bytes = await responseTextWithinLimit(response);
+    const pdf = await getDocumentProxy(bytes);
+    const result = await extractText(pdf, { mergePages: true });
+    return typeof result.text === 'string' ? result.text : result.text.join('\n\n');
+  }
+
   const supported = new Set(['text/plain', 'text/markdown', 'text/csv', 'application/json']);
   if (!supported.has(file.mimeType)) return null;
   const response = await driveFetch(`/files/${encodeURIComponent(file.id)}?alt=media&supportsAllDrives=true`);
-  return response.text();
+  const bytes = await responseTextWithinLimit(response);
+  return new TextDecoder().decode(bytes);
 }
