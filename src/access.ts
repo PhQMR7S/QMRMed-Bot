@@ -19,6 +19,19 @@ export async function ensureTrial(userId: number) {
 
 export async function hasPremiumAccess(userId: number) {
   const user = await db.user.findUniqueOrThrow({ where: { id: userId } });
-  if (user.plan !== 'FREE') return true;
-  return Boolean(user.trialEndsAt && user.trialEndsAt > new Date());
+  const now = new Date();
+  if (user.trialEndsAt && user.trialEndsAt > now) return true;
+  if (user.plan === 'FREE') return false;
+
+  const activeSubscription = await db.subscription.findFirst({
+    where: {
+      userId,
+      plan: user.plan,
+      active: true,
+      startsAt: { lte: now },
+      endsAt: { gt: now },
+    },
+    select: { id: true },
+  });
+  return Boolean(activeSubscription);
 }

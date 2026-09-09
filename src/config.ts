@@ -1,6 +1,15 @@
 import 'dotenv/config';
 import { z } from 'zod';
 
+const booleanFromEnv = z.preprocess((value) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return value;
+  const normalized = value.trim().toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+  if (['false', '0', 'no', 'off', ''].includes(normalized)) return false;
+  return value;
+}, z.boolean());
+
 const env = z.object({
   BOT_TOKEN: z.string().min(1),
   DATABASE_URL: z.string().min(1),
@@ -9,7 +18,7 @@ const env = z.object({
   OMNIROUTE_API_KEY: z.string().optional(),
   OMNIROUTE_MODEL: z.string().default('auto'),
   OMNIROUTE_TIMEOUT_MS: z.coerce.number().int().positive().default(45_000),
-  TRIAL_ENABLED: z.coerce.boolean().default(true),
+  TRIAL_ENABLED: booleanFromEnv.default(true),
   TRIAL_DAYS: z.coerce.number().int().positive().default(7),
 }).parse(process.env);
 
