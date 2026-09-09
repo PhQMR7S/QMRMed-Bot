@@ -9,6 +9,10 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      BOT_TOKEN: ci-placeholder
+      DATABASE_URL: file:./ci.db
+      TRIAL_ENABLED: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,5 +21,7 @@ jobs:
           cache: npm
       - run: npm install
       - run: npx prisma generate
+      - run: npx prisma validate
+      - run: npx prisma db push --skip-generate
       - run: npm run check
       - run: npm run build
