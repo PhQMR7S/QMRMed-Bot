@@ -6,23 +6,41 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       BOT_TOKEN: ci-placeholder
       DATABASE_URL: file:./ci.db
       TRIAL_ENABLED: false
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
         with:
           node-version: 22
-      - run: npm install
-      - run: npm audit --audit-level=high
-      - run: npx prisma generate
-      - run: npx prisma validate
-      - run: npx prisma db push --skip-generate
-      - run: npm run check
-      - run: npm run build
-      - run: npm test
+      - name: Install dependencies
+        run: npm install
+      - name: Security audit
+        run: npm audit --audit-level=high
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Validate Prisma schema
+        run: npx prisma validate
+      - name: Apply database schema
+        run: npx prisma db push --skip-generate
+      - name: Type check
+        run: npm run check
+      - name: Build
+        run: npm run build
+      - name: Test
+        run: npm test
