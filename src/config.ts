@@ -25,6 +25,7 @@ const env = z.object({
   GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: z.string().optional(),
   DRIVE_AUTO_APPROVE: booleanFromEnv.default(true),
   DRIVE_CHUNK_CHARS: z.coerce.number().int().min(1000).max(20000).default(6000),
+  DRIVE_MAX_FILE_MB: z.coerce.number().int().min(1).max(100).default(25),
 }).parse(process.env);
 
 export const config = {
