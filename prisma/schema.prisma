@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Plan { FREE PLUS PRO }
+enum AccessKind { FREE_TRIAL SUBSCRIPTION }
+
+enum QuestionType { MCQ TRUE_FALSE SHORT_ANSWER }
+
+model User {
+  id              Int       @id @default(autoincrement())
+  telegramId      String    @unique
+  username        String?
+  firstName       String?
+  lastName        String?
+  stage           String?
+  department      String?
+  plan            Plan      @default(FREE)
+  trialUsed       Boolean   @default(false)
+  trialStartedAt  DateTime?
+  trialEndsAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  progress        Progress[]
+  attempts        Attempt[]
+  subscriptions   Subscription[]
+}
+
+model Subscription {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  plan        Plan
+  provider    String
+  externalId  String?
+  startsAt    DateTime
+  endsAt      DateTime
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, active])
+}
+
+model Subject {
+  id          Int        @id @default(autoincrement())
+  name        String
+  code        String     @unique
+  description String?
+  order       Int        @default(0)
+  topics      Topic[]
+  questions   Question[]
+}
+
+model Topic {
+  id        Int      @id @default(autoincrement())
+  subjectId Int
+  name      String
+  order     Int      @default(0)
+  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  lessons   Lesson[]
+}
+
+model Lesson {
+  id        Int      @id @default(autoincrement())
+  topicId   Int
+  title     String
+  content   String
+  source    String?
+  order     Int      @default(0)
+  topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+}
+
+model Question {
+  id           Int          @id @default(autoincrement())
+  subjectId    Int
+  text         String
+  explanation  String?
+  type         QuestionType @default(MCQ)
+  isMinisterial Boolean      @default(false)
+  difficulty   Int          @default(1)
+  options      Json?
+  answer       String
+  source       String?
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  attempts     Attempt[]
+  @@index([subjectId, isMinisterial])
+}
+
+model Attempt {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  questionId Int
+  answer     String
+  correct    Boolean
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+}
+
+model Progress {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  lessonId    Int
+  completed   Boolean  @default(false)
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, lessonId])
+}
