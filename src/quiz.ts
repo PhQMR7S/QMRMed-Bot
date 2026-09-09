@@ -31,9 +31,16 @@ export function resolveSelectedValue(question: QuizQuestion, selected: string) {
   return selected;
 }
 
+function normalizeAnswer(value: string) {
+  const normalized = value.trim().toLocaleLowerCase();
+  if (['true', 'صح', 'صحيح', 'yes'].includes(normalized)) return 'true';
+  if (['false', 'خطأ', 'خطا', 'no'].includes(normalized)) return 'false';
+  return normalized;
+}
+
 export function isAnswerCorrect(question: QuizQuestion, selected: string) {
   const selectedValue = resolveSelectedValue(question, selected);
-  return selectedValue.trim().toLocaleLowerCase() === question.answer.trim().toLocaleLowerCase();
+  return normalizeAnswer(selectedValue) === normalizeAnswer(question.answer);
 }
 
 export function canUseInButtonQuiz(question: QuizQuestion) {
