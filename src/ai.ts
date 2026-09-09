@@ -29,16 +29,23 @@ export async function omniChat(messages: AIMessage[], options?: { model?: string
 }
 
 export async function answerMedicalQuestion(question: string, context = '') {
+  const trustedContext = context.trim();
+  if (!trustedContext) {
+    return 'لم أجد محتوى معتمدًا من QMRMed مرتبطًا بسؤالك. جرّب البحث أولًا بكلمات أكثر تحديدًا، ولن أقدّم إجابة من خارج المصادر المعتمدة.';
+  }
+
   return omniChat([
     {
       role: 'system',
       content: [
         'أنت المساعد الدراسي الطبي في QMRMed.',
         'أجب بالعربية الواضحة، وكن دقيقًا ومختصرًا نسبيًا.',
-        'لا تخترع مصادر أو مراجع. إذا لم يكن السياق كافيًا فاذكر ذلك بوضوح.',
+        'اعتمد حصريًا على السياق المعتمد من QMRMed أدناه.',
+        'لا تضف معلومات من معرفتك العامة إذا لم يدعمها السياق.',
+        'لا تخترع مصادر أو مراجع، وإذا لم يكن السياق كافيًا للإجابة فاذكر ذلك بوضوح.',
         'هذا مساعد تعليمي وليس بديلًا عن الطبيب أو التشخيص الفردي.',
-        context ? `السياق المعتمد من QMRMed:\n${context}` : '',
-      ].filter(Boolean).join('\n\n'),
+        `السياق المعتمد من QMRMed:\n${trustedContext}`,
+      ].join('\n\n'),
     },
     { role: 'user', content: question },
   ]);
