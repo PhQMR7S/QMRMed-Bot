@@ -146,7 +146,7 @@ export async function downloadDriveText(file: DriveFile) {
     const bytes = await responseTextWithinLimit(response);
     const pdf = await getDocumentProxy(bytes);
     const result = await extractText(pdf, { mergePages: true });
-    return typeof result.text === 'string' ? result.text : result.text.join('\n\n');
+    return String(result.text);
   }
 
   const supported = new Set(['text/plain', 'text/markdown', 'text/csv', 'application/json']);
