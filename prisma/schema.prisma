@@ -24,6 +24,14 @@ enum QuestionType {
   SHORT_ANSWER
 }
 
+enum ContentKind {
+  SOURCE
+  CASE
+  QUESTION
+  MINISTERIAL
+  REFERENCE
+}
+
 model User {
   id              Int       @id @default(autoincrement())
   telegramId      String    @unique
@@ -65,6 +73,7 @@ model Subject {
   order       Int        @default(0)
   topics      Topic[]
   questions   Question[]
+  content     ContentChunk[]
 }
 
 model Topic {
@@ -82,8 +91,10 @@ model Lesson {
   title     String
   content   String
   source    String?
+  sourceId  Int?
   order     Int      @default(0)
   topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  contentSource ContentSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
 }
 
 model Question {
@@ -97,9 +108,64 @@ model Question {
   options      Json?
   answer       String
   source       String?
+  sourceId     Int?
   subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  contentSource ContentSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
   attempts     Attempt[]
   @@index([subjectId, isMinisterial])
+}
+
+model ContentSource {
+  id            Int       @id @default(autoincrement())
+  driveFileId   String    @unique
+  name          String
+  mimeType      String
+  webViewLink   String?
+  modifiedTime  DateTime?
+  checksum      String?
+  kind          ContentKind @default(SOURCE)
+  department    String?
+  stage         String?
+  subjectName   String?
+  approved      Boolean   @default(false)
+  indexed       Boolean   @default(false)
+  lastSyncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  chunks        ContentChunk[]
+  lessons       Lesson[]
+  questions     Question[]
+  @@index([approved, kind])
+  @@index([department, stage, subjectName])
+}
+
+model ContentChunk {
+  id            Int      @id @default(autoincrement())
+  sourceId      Int
+  subjectId     Int?
+  kind          ContentKind
+  title         String
+  text          String
+  chunkIndex    Int      @default(0)
+  driveFileId   String
+  source        ContentSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  subject      Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@unique([driveFileId, chunkIndex])
+  @@index([sourceId, kind])
+  @@index([subjectId, kind])
+}
+
+model DriveSyncState {
+  id           Int      @id @default(autoincrement())
+  rootFolderId String   @unique
+  lastRunAt    DateTime?
+  lastSuccessAt DateTime?
+  lastError    String?
+  filesSeen    Int      @default(0)
+  filesIndexed Int      @default(0)
+  updatedAt    DateTime @updatedAt
 }
 
 model Attempt {
