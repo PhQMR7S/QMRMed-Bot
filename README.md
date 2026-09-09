@@ -59,9 +59,10 @@ Supported directly by the current synchronizer:
 - Google Docs → plain text
 - Google Sheets → CSV text
 - Google Slides → plain text export
+- PDF → text extraction with `unpdf` when the PDF contains selectable text
 - TXT / Markdown / CSV / JSON files
 
-PDF and scanned-image extraction is deliberately not treated as successful indexing yet; those files are recorded as unindexed instead of silently sending empty context to the AI. A PDF/OCR extraction layer can be added without changing the Drive/source schema.
+Scanned/image-only PDFs still require OCR and are not falsely marked as successfully indexed when no text can be extracted. Binary files outside the supported formats are skipped safely. A file-size limit is enforced with `DRIVE_MAX_FILE_MB` (25 MB by default) to protect the sync worker.
 
 ## AI architecture
 
@@ -79,7 +80,7 @@ OmniRoute
 Arabic answer grounded in QMRMed content
 ```
 
-If no approved QMRMed context is found, the AI refuses to invent an answer from general knowledge.
+If no approved QMRMed context is found, the AI refuses to invent an answer from general knowledge. Any legacy lesson context passed by older bot code is ignored as an AI source; Drive-approved retrieval is authoritative.
 
 ## Stack
 
@@ -123,6 +124,7 @@ GOOGLE_DRIVE_ROOT_FOLDER_ID=your_qmrmed_root_folder_id
 GOOGLE_SERVICE_ACCOUNT_JSON_BASE64=base64_encoded_service_account_json
 DRIVE_AUTO_APPROVE=true
 DRIVE_CHUNK_CHARS=6000
+DRIVE_MAX_FILE_MB=25
 ```
 
 The service account must have read access to the QMRMed root folder. For a Shared Drive, grant the service account the minimum read role needed for the content corpus. Never commit service-account JSON, private keys, `BOT_TOKEN`, or `OMNIROUTE_API_KEY` to GitHub.
@@ -135,7 +137,7 @@ After the Drive credentials and root folder are configured:
 npm run content:sync
 ```
 
-The command recursively scans the configured root folder, extracts supported text, updates the source metadata and rebuilds its content chunks. Re-running the command is safe for the same Drive file because chunks are replaced for that source.
+The command recursively scans the configured root folder, extracts supported text, updates the source metadata and rebuilds its content chunks. Re-running the command is safe for the same Drive file because unchanged files are skipped and changed files have their chunks replaced. Files removed from the configured Drive tree are removed from the searchable index and approval is revoked.
 
 For production, run this command from the deployment scheduler whenever Drive content changes. Google Drive also provides APIs/events for monitoring file activity, so the same sync layer can later be changed from scheduled full scans to event-driven incremental synchronization.
 
