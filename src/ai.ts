@@ -29,17 +29,12 @@ export async function omniChat(messages: AIMessage[], options?: { model?: string
   }
 }
 
-export async function answerMedicalQuestion(question: string, context = '') {
+export async function answerMedicalQuestion(question: string) {
   const driveItems = await searchApprovedContent(question, { take: 12 });
-  const driveContext = formatRetrievedContext(driveItems, 12_000);
-  const trustedContext = driveContext || context.trim();
+  const trustedContext = formatRetrievedContext(driveItems, 12_000);
   if (!trustedContext) {
     return 'لم أجد محتوى معتمدًا من QMRMed مرتبطًا بسؤالك. جرّب كلمات أكثر تحديدًا، ولن أقدّم إجابة من خارج المصادر المعتمدة.';
   }
-
-  const sourceRule = driveContext
-    ? 'المقاطع التالية مسترجعة مباشرة من ملفات QMRMed المعتمدة في Google Drive. اعتمد عليها حصريًا.'
-    : 'السياق التالي هو محتوى QMRMed المتاح حاليًا. اعتمد عليه حصريًا.';
 
   return omniChat([
     {
@@ -47,7 +42,7 @@ export async function answerMedicalQuestion(question: string, context = '') {
       content: [
         'أنت المساعد الدراسي الطبي في QMRMed.',
         'أجب بالعربية الواضحة، وكن دقيقًا ومختصرًا نسبيًا.',
-        sourceRule,
+        'المقاطع التالية مسترجعة مباشرة من ملفات QMRMed المعتمدة في Google Drive. اعتمد عليها حصريًا.',
         'لا تضف معلومات من معرفتك العامة إذا لم يدعمها السياق.',
         'لا تخترع مصادر أو مراجع. عند ذكر مصدر، استخدم اسم المصدر الموجود في السياق فقط.',
         'إذا كان السؤال يطلب Case أو أسئلة وزارية، استخرجها أو لخّصها من المحتوى المسترجع ولا تنشئ سؤالًا وزاريًا من عندك.',
