@@ -29,7 +29,7 @@ export async function omniChat(messages: AIMessage[], options?: { model?: string
   }
 }
 
-export async function answerMedicalQuestion(question: string) {
+export async function answerMedicalQuestion(question: string, _untrustedContext = '') {
   const driveItems = await searchApprovedContent(question, { take: 12 });
   const trustedContext = formatRetrievedContext(driveItems, 12_000);
   if (!trustedContext) {
