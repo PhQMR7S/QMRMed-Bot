@@ -18,6 +18,8 @@ test('resolves object options by callback key', () => {
 test('supports true/false button questions without options', () => {
   assert.equal(canUseInButtonQuiz({ type: 'TRUE_FALSE', answer: 'صحيح' }), true);
   assert.equal(isAnswerCorrect({ type: 'TRUE_FALSE', answer: 'صحيح' }, 'صحيح'), true);
+  assert.equal(isAnswerCorrect({ type: 'TRUE_FALSE', answer: 'true' }, 'صحيح'), true);
+  assert.equal(isAnswerCorrect({ type: 'TRUE_FALSE', answer: 'false' }, 'صحيح'), false);
 });
 
 test('excludes short-answer questions from button quiz', () => {
