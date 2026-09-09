@@ -19,15 +19,67 @@ Standalone Telegram learning product for QMRMed, built as an interactive medical
 - 💳 Subscription UI prepared for Telegram Stars verification
 - 🛠️ Admin dashboard with statistics, content counts, broadcast and OmniRoute health check
 
-## AI architecture
+## Google Drive content architecture
 
-The bot does not call a model provider directly. It calls the OpenAI-compatible OmniRoute gateway:
+Google Drive is the source repository for QMRMed educational content. The bot does not give students direct Drive access and does not send the whole Drive to the model.
 
 ```text
-Telegram → QMRMed Bot → QMRMed AI service → OmniRoute → selected/fallback model
+Google Drive
+    ↓
+QMRMed Content Sync
+    ↓
+ContentSource + ContentChunk index (Prisma)
+    ↓
+Approved-content retrieval
+    ↓
+OmniRoute
+    ↓
+Telegram / future QMRMed platform
 ```
 
-OmniRoute is configured with `OMNIROUTE_URL`, `OMNIROUTE_API_KEY`, and `OMNIROUTE_MODEL`. The default model is `auto`, allowing OmniRoute to route according to its configured providers/fallback policy.
+Recommended Drive structure:
+
+```text
+QMRMed/
+├── Medicine/
+│   ├── Stage 1/Subject Name/
+│   │   ├── Sources/
+│   │   ├── Cases/
+│   │   └── Ministerial/
+│   └── ...
+├── Dentistry/
+├── Pharmacy/
+└── Shared_References/
+```
+
+The synchronizer records the Drive file ID, filename, MIME type, modified time, source kind, department, stage and subject. It chunks supported text content into the QMRMed database. Only `approved=true` content is eligible for AI retrieval.
+
+Supported directly by the current synchronizer:
+
+- Google Docs → plain text
+- Google Sheets → CSV text
+- Google Slides → plain text export
+- TXT / Markdown / CSV / JSON files
+
+PDF and scanned-image extraction is deliberately not treated as successful indexing yet; those files are recorded as unindexed instead of silently sending empty context to the AI. A PDF/OCR extraction layer can be added without changing the Drive/source schema.
+
+## AI architecture
+
+The bot does not call a model provider directly. It calls the OpenAI-compatible OmniRoute gateway. Before calling OmniRoute, QMRMed retrieves approved content from the indexed Google Drive corpus.
+
+```text
+Student question
+      ↓
+Approved QMRMed Drive index
+      ↓
+Relevant source / case / question / ministerial chunks
+      ↓
+OmniRoute
+      ↓
+Arabic answer grounded in QMRMed content
+```
+
+If no approved QMRMed context is found, the AI refuses to invent an answer from general knowledge.
 
 ## Stack
 
@@ -35,6 +87,7 @@ OmniRoute is configured with `OMNIROUTE_URL`, `OMNIROUTE_API_KEY`, and `OMNIROUT
 - grammY Telegram framework
 - Prisma ORM
 - SQLite for the first standalone deployment
+- Google Drive API (read-only service-account access)
 - OmniRoute as the AI gateway
 - GitHub Actions CI
 
@@ -48,6 +101,7 @@ npx prisma db push
 npm run db:seed
 npm run check
 npm run build
+npm test
 npm run dev
 ```
 
@@ -62,7 +116,28 @@ OMNIROUTE_API_KEY=your_omniroute_endpoint_key
 OMNIROUTE_MODEL=auto
 ```
 
-Never commit `BOT_TOKEN` or `OMNIROUTE_API_KEY` to GitHub. Keep them in the deployment environment.
+Google Drive configuration:
+
+```env
+GOOGLE_DRIVE_ROOT_FOLDER_ID=your_qmrmed_root_folder_id
+GOOGLE_SERVICE_ACCOUNT_JSON_BASE64=base64_encoded_service_account_json
+DRIVE_AUTO_APPROVE=true
+DRIVE_CHUNK_CHARS=6000
+```
+
+The service account must have read access to the QMRMed root folder. For a Shared Drive, grant the service account the minimum read role needed for the content corpus. Never commit service-account JSON, private keys, `BOT_TOKEN`, or `OMNIROUTE_API_KEY` to GitHub.
+
+## Syncing Drive content
+
+After the Drive credentials and root folder are configured:
+
+```bash
+npm run content:sync
+```
+
+The command recursively scans the configured root folder, extracts supported text, updates the source metadata and rebuilds its content chunks. Re-running the command is safe for the same Drive file because chunks are replaced for that source.
+
+For production, run this command from the deployment scheduler whenever Drive content changes. Google Drive also provides APIs/events for monitoring file activity, so the same sync layer can later be changed from scheduled full scans to event-driven incremental synchronization.
 
 ## OmniRoute
 
