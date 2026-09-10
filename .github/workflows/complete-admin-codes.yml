@@ -19,6 +19,7 @@ jobs:
           from pathlib import Path
           p = Path('src/index.ts')
           s = p.read_text()
+          s = s.replace("adminCodesMenu, plansMenu, externalPaymentMenu, cancelMenu", "adminCodesMenu, adminCodeListMenu, adminCodeDetailMenu, plansMenu, externalPaymentMenu, cancelMenu")
           s = s.replace("getAdminDashboard, getDriveStatus, runAdminDriveSync, getContentBreakdown", "getAdminDashboard, getDriveStatus, runAdminDriveSync, getContentBreakdown, listActivationCodes, getActivationCode, setActivationCodeActive")
           old = "if (data === 'admin:codes') return render(ctx, '🎟️ إدارة أكواد الاشتراك\\n\\nاختر الخطة والمدة لإنشاء كود جديد. الكود لا يمنح أي صلاحيات أدمن؛ يمنح الاشتراك المحدد فقط.', adminCodesMenu());"
           new = """if (data === 'admin:codes') return render(ctx, '🎟️ إدارة أكواد الاشتراك\\n\\nاختر الخطة والمدة لإنشاء كود جديد، أو اعرض الأكواد الحالية لإدارتها.', adminCodesMenu());
@@ -54,8 +55,7 @@ jobs:
     const updated = await getActivationCode(id);
     return render(ctx, `✅ تم ${nextActive ? 'تفعيل' : 'تعطيل'} الكود #${id}.`, adminCodeDetailMenu(id, !!updated?.active));
   }"""
-          if old not in s:
-              raise SystemExit('admin codes anchor not found')
+          if old not in s: raise SystemExit('admin codes anchor not found')
           s = s.replace(old, new, 1)
           p.write_text(s)
       - name: Typecheck and test
