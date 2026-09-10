@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - feature/admin-drive-panel
+      - feat/production-postgres
 
 permissions:
   contents: read
@@ -17,9 +17,23 @@ jobs:
   drive-sync:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: qmrmed_drive_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d qmrmed_drive_ci"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     env:
       BOT_TOKEN: ci-placeholder
-      DATABASE_URL: file:./drive-sync-check.db
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/qmrmed_drive_ci
       TRIAL_ENABLED: false
       GOOGLE_DRIVE_ROOT_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_ROOT_FOLDER_ID }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}

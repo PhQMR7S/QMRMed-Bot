@@ -1,0 +1,59 @@
+name: Final QMRMed Verification
+
+on:
+  push:
+    branches:
+      - feat/qmrmed-final-completion
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qmrmed-final-verification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: qmrmed_verify
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d qmrmed_verify"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/qmrmed_verify
+      TRIAL_ENABLED: false
+      OMNIROUTE_URL: ${{ secrets.OMNIROUTE_URL }}
+      OMNIROUTE_API_KEY: ${{ secrets.OMNIROUTE_API_KEY }}
+      OMNIROUTE_MODEL: ${{ secrets.OMNIROUTE_MODEL }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm audit --audit-level=high
+      - run: npx prisma generate
+      - run: npx prisma validate
+      - run: npx prisma db push --skip-generate
+      - run: npm run check
+      - run: npm run build
+      - run: npm test
+      - name: Verify Telegram bot and command surface
+        if: ${{ env.BOT_TOKEN != '' }}
+        run: npm run check:telegram
+      - name: Verify OmniRoute smoke test
+        if: ${{ env.BOT_TOKEN != '' && env.OMNIROUTE_URL != '' && env.OMNIROUTE_API_KEY != '' }}
+        run: npm run smoke:bot

@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -11,6 +11,7 @@ enum Plan {
   FREE
   PLUS
   PRO
+  @@map("qmr_plan")
 }
 
 enum AccessKind {
@@ -22,6 +23,7 @@ enum QuestionType {
   MCQ
   TRUE_FALSE
   SHORT_ANSWER
+  @@map("qmr_question_type")
 }
 
 enum ContentKind {
@@ -30,6 +32,15 @@ enum ContentKind {
   QUESTION
   MINISTERIAL
   REFERENCE
+  @@map("qmr_content_kind")
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+  FAILED
+  @@map("qmr_payment_status")
 }
 
 model User {
@@ -44,11 +55,15 @@ model User {
   trialUsed       Boolean   @default(false)
   trialStartedAt  DateTime?
   trialEndsAt     DateTime?
+  termsAcceptedAt DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   progress        Progress[]
   attempts        Attempt[]
   subscriptions   Subscription[]
+  payments        PaymentTransaction[]
+  codeRedemptions ActivationCodeRedemption[]
+  @@map("qmr_users")
 }
 
 model Subscription {
@@ -63,6 +78,54 @@ model Subscription {
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId, active])
+  @@map("qmr_subscriptions")
+}
+
+model PaymentTransaction {
+  id                       Int           @id @default(autoincrement())
+  userId                   Int
+  plan                     Plan
+  provider                 String
+  currency                 String
+  amount                   Int
+  payload                  String
+  telegramPaymentChargeId  String?       @unique
+  providerPaymentChargeId  String?
+  status                   PaymentStatus @default(PENDING)
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+  user                     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, status])
+  @@index([payload])
+  @@map("qmr_payment_transactions")
+}
+
+model ActivationCode {
+  id                 Int      @id @default(autoincrement())
+  code               String   @unique
+  plan               Plan
+  durationDays       Int
+  maxUses            Int      @default(1)
+  usedCount          Int      @default(0)
+  active             Boolean  @default(true)
+  expiresAt          DateTime?
+  createdByTelegramId String
+  createdAt           DateTime @default(now())
+  redemptions         ActivationCodeRedemption[]
+  @@index([active, plan])
+  @@map("qmr_activation_codes")
+}
+
+model ActivationCodeRedemption {
+  id         Int      @id @default(autoincrement())
+  codeId     Int
+  userId     Int
+  redeemedAt DateTime @default(now())
+  code       ActivationCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([codeId, userId])
+  @@index([userId, redeemedAt])
+  @@map("qmr_activation_code_redemptions")
 }
 
 model Subject {
@@ -74,6 +137,7 @@ model Subject {
   topics      Topic[]
   questions   Question[]
   content     ContentChunk[]
+  @@map("qmr_subjects")
 }
 
 model Topic {
@@ -83,6 +147,7 @@ model Topic {
   order     Int      @default(0)
   subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   lessons   Lesson[]
+  @@map("qmr_topics")
 }
 
 model Lesson {
@@ -95,6 +160,7 @@ model Lesson {
   order     Int      @default(0)
   topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
   contentSource ContentSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  @@map("qmr_lessons")
 }
 
 model Question {
@@ -113,6 +179,7 @@ model Question {
   contentSource ContentSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
   attempts     Attempt[]
   @@index([subjectId, isMinisterial])
+  @@map("qmr_questions")
 }
 
 model ContentSource {
@@ -137,6 +204,7 @@ model ContentSource {
   questions     Question[]
   @@index([approved, kind])
   @@index([department, stage, subjectName])
+  @@map("qmr_content_sources")
 }
 
 model ContentChunk {
@@ -155,6 +223,7 @@ model ContentChunk {
   @@unique([driveFileId, chunkIndex])
   @@index([sourceId, kind])
   @@index([subjectId, kind])
+  @@map("qmr_content_chunks")
 }
 
 model DriveSyncState {
@@ -166,6 +235,7 @@ model DriveSyncState {
   filesSeen    Int      @default(0)
   filesIndexed Int      @default(0)
   updatedAt    DateTime @updatedAt
+  @@map("qmr_drive_sync_states")
 }
 
 model Attempt {
@@ -177,6 +247,7 @@ model Attempt {
   createdAt  DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  @@map("qmr_attempts")
 }
 
 model Progress {
@@ -187,4 +258,5 @@ model Progress {
   updatedAt   DateTime @updatedAt
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([userId, lessonId])
+  @@map("qmr_progress")
 }

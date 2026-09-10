@@ -17,9 +17,23 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: qmrmed_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d qmrmed_ci"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     env:
       BOT_TOKEN: ci-placeholder
-      DATABASE_URL: file:./ci.db
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/qmrmed_ci
       TRIAL_ENABLED: false
     steps:
       - name: Checkout
