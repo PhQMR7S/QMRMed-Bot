@@ -26,14 +26,15 @@ export function topicMenu(topics: { id: number; name: string }[], subjectId: num
 
 export function lessonMenu(lessons: { id: number; title: string }[], topicId: number, subjectId: number) {
   const keyboard = new InlineKeyboard();
-  for (const lesson of lessons) keyboard.text(lesson.title, `lesson:${lesson.id}`).row();
+  for (const lesson of lessons) keyboard.text(lesson.title, `${'lesson'}:${lesson.id}`).row();
   return keyboard.text('⬅️ المواضيع', `topicback:${topicId}:${subjectId}`).row().text('🏠 الرئيسية', 'home');
 }
 
 export function adminMenu() {
   return new InlineKeyboard()
-    .text('📈 إحصائيات', 'admin:stats').text('👥 المستخدمون', 'admin:users').row()
-    .text('📚 المحتوى', 'admin:content').text('📣 إرسال جماعي', 'admin:broadcast').row()
-    .text('🤖 فحص OmniRoute', 'admin:ai').row()
+    .text('📊 Dashboard', 'admin:stats').text('👥 المستخدمون', 'admin:users').row()
+    .text('📚 المحتوى', 'admin:content').text('☁️ Google Drive', 'admin:drive').row()
+    .text('🤖 OmniRoute / AI', 'admin:ai').text('📣 الإرسال الجماعي', 'admin:broadcast').row()
+    .text('📝 الأسئلة والوزاريات', 'admin:questions').row()
     .text('⬅️ الرئيسية', 'home');
 }
