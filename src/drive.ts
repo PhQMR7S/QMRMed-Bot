@@ -115,12 +115,8 @@ export async function listDriveFiles(rootFolderId: string) {
   return result;
 }
 
-async function responseTextWithinLimit(response: Response) {
-  const maxBytes = config.DRIVE_MAX_FILE_MB * 1024 * 1024;
-  const contentLength = Number(response.headers.get('content-length') ?? 0);
-  if (contentLength > maxBytes) throw new Error(`Drive file exceeds DRIVE_MAX_FILE_MB (${config.DRIVE_MAX_FILE_MB} MB)`);
+async function responseBytes(response: Response) {
   const buffer = await response.arrayBuffer();
-  if (buffer.byteLength > maxBytes) throw new Error(`Drive file exceeds DRIVE_MAX_FILE_MB (${config.DRIVE_MAX_FILE_MB} MB)`);
   return new Uint8Array(buffer);
 }
 
@@ -143,7 +139,7 @@ export async function downloadDriveText(file: DriveFile) {
 
   if (file.mimeType === 'application/pdf') {
     const response = await driveFetch(`/files/${encodeURIComponent(file.id)}?alt=media&supportsAllDrives=true`);
-    const bytes = await responseTextWithinLimit(response);
+    const bytes = await responseBytes(response);
     const pdf = await getDocumentProxy(bytes);
     const result = await extractText(pdf, { mergePages: true });
     return String(result.text);
@@ -152,6 +148,6 @@ export async function downloadDriveText(file: DriveFile) {
   const supported = new Set(['text/plain', 'text/markdown', 'text/csv', 'application/json']);
   if (!supported.has(file.mimeType)) return null;
   const response = await driveFetch(`/files/${encodeURIComponent(file.id)}?alt=media&supportsAllDrives=true`);
-  const bytes = await responseTextWithinLimit(response);
+  const bytes = await responseBytes(response);
   return new TextDecoder().decode(bytes);
 }

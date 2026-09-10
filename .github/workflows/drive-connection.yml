@@ -1,0 +1,40 @@
+name: Google Drive Connection Check
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/admin-drive-panel
+
+permissions:
+  contents: read
+
+concurrency:
+  group: drive-connection-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drive-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BOT_TOKEN: ci-placeholder
+      DATABASE_URL: file:./ci.db
+      TRIAL_ENABLED: false
+      GOOGLE_DRIVE_ROOT_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_ROOT_FOLDER_ID }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Check Google Drive access
+        run: npx tsx src/check-drive.ts

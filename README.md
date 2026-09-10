@@ -41,16 +41,20 @@ Recommended Drive structure:
 
 ```text
 QMRMed/
-├── Medicine/
-│   ├── Stage 1/Subject Name/
-│   │   ├── Sources/
-│   │   ├── Cases/
-│   │   └── Ministerial/
-│   └── ...
-├── Dentistry/
-├── Pharmacy/
-└── Shared_References/
+├── 01 - Medicine/
+│   └── Stage / Subject/
+│       ├── 01 - Sources/
+│       ├── 02 - References/
+│       ├── 03 - Question Bank/
+│       ├── 04 - Ministerial/
+│       └── 99 - Other/
+├── 02 - Dentistry/
+├── 03 - Pharmacy/
+├── 04 - Shared References/
+└── 99 - System/
 ```
+
+Cases are generated from approved Sources/References content by the application layer; they are not required to exist as a separate Drive folder. Question Bank and Ministerial content remain independent source types.
 
 The synchronizer records the Drive file ID, filename, MIME type, modified time, source kind, department, stage and subject. It chunks supported text content into the QMRMed database. Only `approved=true` content is eligible for AI retrieval.
 
@@ -62,7 +66,15 @@ Supported directly by the current synchronizer:
 - PDF → text extraction with `unpdf` when the PDF contains selectable text
 - TXT / Markdown / CSV / JSON files
 
-Scanned/image-only PDFs still require OCR and are not falsely marked as successfully indexed when no text can be extracted. Binary files outside the supported formats are skipped safely. A file-size limit is enforced with `DRIVE_MAX_FILE_MB` (25 MB by default) to protect the sync worker.
+Scanned/image-only PDFs still require OCR and are not falsely marked as successfully indexed when no text can be extracted. Binary files outside the supported formats are skipped safely.
+
+### File size policy
+
+There is **no application-level file-size limit** for QMRMed Drive sources. Large textbooks, reference PDFs and other source files are allowed because the Drive corpus is expected to contain substantial medical references.
+
+The synchronizer downloads a supported file and extracts its text before chunking it. Therefore, very large PDFs can still be constrained by the available memory, processing time, Google Drive/API behavior, or the GitHub Actions runner resources; these are infrastructure/runtime constraints, not an imposed QMRMed file-size ceiling.
+
+For production, large-file processing should run in a sufficiently resourced persistent worker rather than relying on GitHub Actions as the production indexer.
 
 ## AI architecture
 
@@ -124,7 +136,6 @@ GOOGLE_DRIVE_ROOT_FOLDER_ID=your_qmrmed_root_folder_id
 GOOGLE_SERVICE_ACCOUNT_JSON_BASE64=base64_encoded_service_account_json
 DRIVE_AUTO_APPROVE=true
 DRIVE_CHUNK_CHARS=6000
-DRIVE_MAX_FILE_MB=25
 ```
 
 The service account must have read access to the QMRMed root folder. For a Shared Drive, grant the service account the minimum read role needed for the content corpus. Never commit service-account JSON, private keys, `BOT_TOKEN`, or `OMNIROUTE_API_KEY` to GitHub.
@@ -138,6 +149,8 @@ npm run content:sync
 ```
 
 The command recursively scans the configured root folder, extracts supported text, updates the source metadata and rebuilds its content chunks. Re-running the command is safe for the same Drive file because unchanged files are skipped and changed files have their chunks replaced. Files removed from the configured Drive tree are removed from the searchable index and approval is revoked.
+
+The GitHub full-sync check uses an ephemeral SQLite database only for validation. It verifies that the configured Drive corpus can be scanned and indexed successfully; it does not populate the production database.
 
 For production, run this command from the deployment scheduler whenever Drive content changes. Google Drive also provides APIs/events for monitoring file activity, so the same sync layer can later be changed from scheduled full scans to event-driven incremental synchronization.
 

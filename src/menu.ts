@@ -32,8 +32,16 @@ export function lessonMenu(lessons: { id: number; title: string }[], topicId: nu
 
 export function adminMenu() {
   return new InlineKeyboard()
-    .text('📈 إحصائيات', 'admin:stats').text('👥 المستخدمون', 'admin:users').row()
-    .text('📚 المحتوى', 'admin:content').text('📣 إرسال جماعي', 'admin:broadcast').row()
-    .text('🤖 فحص OmniRoute', 'admin:ai').row()
+    .text('📊 Dashboard', 'admin:stats').text('👥 المستخدمون', 'admin:users').row()
+    .text('📚 المحتوى', 'admin:content').text('☁️ Google Drive', 'admin:drive').row()
+    .text('🤖 OmniRoute / AI', 'admin:ai').text('📣 الإرسال الجماعي', 'admin:broadcast').row()
+    .text('📝 الأسئلة والوزاريات', 'admin:questions').row()
     .text('⬅️ الرئيسية', 'home');
+}
+
+export function adminDriveMenu() {
+  return new InlineKeyboard()
+    .text('🔄 مزامنة الآن', 'admin:drive:sync').row()
+    .text('🔎 تحديث الحالة', 'admin:drive:status').row()
+    .text('⬅️ لوحة الإدارة', 'admin');
 }
