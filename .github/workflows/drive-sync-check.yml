@@ -50,5 +50,4 @@ jobs:
         run: npx tsx src/sync-drive.ts
 
       - name: Verify synchronized database
-        run: |
-          npx tsx -e "import { PrismaClient } from '@prisma/client'; const db=new PrismaClient(); const main=async()=>{const sources=await db.contentSource.count({where:{indexed:true}}); const chunks=await db.contentChunk.count(); const approved=await db.contentSource.count({where:{approved:true}}); const state=await db.driveSyncState.findUnique({where:{rootFolderId:process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID}}); console.log(JSON.stringify({syncOk:true,indexedSources:sources,chunks,approvedSources:approved,lastSuccessAt:state?.lastSuccessAt?.toISOString()??null},null,2)); if(!state?.lastSuccessAt) throw new Error('Drive sync did not record a successful run'); await db.$disconnect()}; main().catch(async e=>{console.error(e); await db.$disconnect(); process.exit(1)})"
+        run: npx tsx src/verify-drive-sync.ts
