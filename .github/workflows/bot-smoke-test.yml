@@ -2,6 +2,9 @@ name: Bot Smoke Test
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - fix/full-audit-bot-runtime
 
 permissions:
   contents: read
