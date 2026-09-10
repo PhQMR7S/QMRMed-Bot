@@ -4,8 +4,8 @@ import { omniChat, type AIMessage } from './ai.js';
 
 export type AISection = 'study' | 'cases' | 'questions' | 'ministerial' | 'exams' | 'search' | 'admin';
 
-function groupFor(section: AISection, plan: Plan) {
-  const groups = {
+export function selectModelGroup(section: AISection, plan: Plan) {
+  const groups: Record<AISection, string | undefined> = {
     study: process.env.OMNIROUTE_GROUP_STUDY,
     cases: process.env.OMNIROUTE_GROUP_CASES,
     questions: process.env.OMNIROUTE_GROUP_QUESTIONS,
@@ -13,13 +13,12 @@ function groupFor(section: AISection, plan: Plan) {
     exams: process.env.OMNIROUTE_GROUP_EXAMS,
     search: process.env.OMNIROUTE_GROUP_SEARCH,
     admin: process.env.OMNIROUTE_GROUP_ADMIN,
-  } satisfies Record<AISection, string | undefined>;
+  };
   return groups[section] ?? (plan === 'PRO' ? undefined : process.env.OMNIROUTE_GROUP_DEFAULT);
 }
 
 export async function routedChat(section: AISection, plan: Plan, messages: AIMessage[], temperature = 0.2) {
-  const model = groupFor(section, plan);
-  return omniChat(messages, { model, temperature });
+  return omniChat(messages, { model: selectModelGroup(section, plan), temperature });
 }
 
 export function aiRoutingSummary() {
