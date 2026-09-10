@@ -1,0 +1,54 @@
+name: Google Drive Full Sync Check
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/admin-drive-panel
+
+permissions:
+  contents: read
+
+concurrency:
+  group: drive-sync-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drive-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BOT_TOKEN: ci-placeholder
+      DATABASE_URL: file:./drive-sync-check.db
+      TRIAL_ENABLED: false
+      GOOGLE_DRIVE_ROOT_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_ROOT_FOLDER_ID }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
+      DRIVE_AUTO_APPROVE: true
+      DRIVE_CHUNK_CHARS: 6000
+      DRIVE_MAX_FILE_MB: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Apply database schema
+        run: npx prisma db push --skip-generate
+
+      - name: Run full Google Drive sync
+        run: npx tsx src/sync-drive.ts
+
+      - name: Verify synchronized database
+        run: |
+          npx tsx -e "import { PrismaClient } from '@prisma/client'; const db=new PrismaClient(); const main=async()=>{const sources=await db.contentSource.count({where:{indexed:true}}); const chunks=await db.contentChunk.count(); const approved=await db.contentSource.count({where:{approved:true}}); const state=await db.driveSyncState.findUnique({where:{rootFolderId:process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID}}); console.log(JSON.stringify({syncOk:true,indexedSources:sources,chunks,approvedSources:approved,lastSuccessAt:state?.lastSuccessAt?.toISOString()??null},null,2)); if(!state?.lastSuccessAt) throw new Error('Drive sync did not record a successful run'); await db.$disconnect()}; main().catch(async e=>{console.error(e); await db.$disconnect(); process.exit(1)})"
