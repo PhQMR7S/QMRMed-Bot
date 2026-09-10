@@ -36,12 +36,17 @@ function contentKind(path: string): ContentKind | null {
   if (segments.some((part) => part === 'sources' || part === 'source' || part.includes('مصادر') || part === 'المصادر')) return 'SOURCE';
   return null;
 }
+export function normalizeStage(part: string) {
+  const match = part.match(/(?:stage|year|مرحلة|سنة)\s*[-_ ]*(\d+)/i);
+  return match?.[1] ?? null;
+}
 function metadataFromPath(path: string) {
   const parts = normalizedSegments(path).slice(0, -1);
   const normalized = parts.map((part) => DEPARTMENTS[part.toLocaleLowerCase()] ?? part);
   const departmentIndex = normalized.findIndex((part) => Object.values(DEPARTMENTS).includes(part));
   const department = departmentIndex >= 0 ? normalized[departmentIndex] : null;
-  const stage = normalized.find((part) => /(?:stage|year|مرحلة|سنة)\s*[-_ ]*\d+/i.test(part)) ?? null;
+  const stagePart = normalized.find((part) => normalizeStage(part) !== null);
+  const stage = stagePart ? normalizeStage(stagePart) : null;
   const kindIndex = parts.findIndex(isKindFolder);
   const kindFolder = kindIndex >= 0 ? normalizeFolderName(parts[kindIndex]).toLocaleLowerCase() : null;
   const subjectName = kindIndex > 0 && kindFolder !== 'shared references' ? normalized[kindIndex - 1] : null;
@@ -94,10 +99,7 @@ export async function syncGoogleDrive() {
       });
       if (!text?.trim()) {
         skipped++;
-        await db.$transaction([
-          db.contentChunk.deleteMany({ where: { sourceId: source.id } }),
-          db.contentSource.update({ where: { id: source.id }, data: { indexed: false } }),
-        ]);
+        await db.$transaction([db.contentChunk.deleteMany({ where: { sourceId: source.id } }), db.contentSource.update({ where: { id: source.id }, data: { indexed: false } })]);
         continue;
       }
       const parts = chunkText(text, config.DRIVE_CHUNK_CHARS);
@@ -107,18 +109,12 @@ export async function syncGoogleDrive() {
         if (parts.length) await tx.contentChunk.createMany({ data: parts.map((part, i) => ({ sourceId: source.id, subjectId: subject?.id, kind, title: file.name, text: part, chunkIndex: i, driveFileId: file.id })) });
         await tx.contentSource.update({ where: { id: source.id }, data: { indexed: parts.length > 0, lastSyncedAt: new Date() } });
       });
-      indexed++;
-      chunks += parts.length;
+      indexed++; chunks += parts.length;
     }
-    if (currentIds.size === 0) {
-      throw new Error('Google Drive scan found no indexable QMRMed files; stale-content cleanup was intentionally skipped. Verify the folder structure before retrying.');
-    }
+    if (currentIds.size === 0) throw new Error('Google Drive scan found no indexable QMRMed files; stale-content cleanup was intentionally skipped. Verify the folder structure before retrying.');
     const stale = await db.contentSource.findMany({ where: { driveFileId: { notIn: [...currentIds] }, indexed: true }, select: { id: true } });
     for (const source of stale) {
-      await db.$transaction([
-        db.contentChunk.deleteMany({ where: { sourceId: source.id } }),
-        db.contentSource.update({ where: { id: source.id }, data: { indexed: false, approved: false } }),
-      ]);
+      await db.$transaction([db.contentChunk.deleteMany({ where: { sourceId: source.id } }), db.contentSource.update({ where: { id: source.id }, data: { indexed: false, approved: false } })]);
       removed++;
     }
     await db.driveSyncState.update({ where: { rootFolderId: root }, data: { lastSuccessAt: new Date(), lastError: null, filesSeen: files.length, filesIndexed: indexed } });
