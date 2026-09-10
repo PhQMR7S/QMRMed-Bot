@@ -14,7 +14,8 @@
     "content:sync": "tsx src/sync-drive.ts",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "tsx --test tests/*.test.ts",
-    "smoke:bot": "tsx scripts/smoke-test.ts"
+    "smoke:bot": "tsx scripts/smoke-test.ts",
+    "check:telegram": "tsx scripts/check-bot-surface.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
