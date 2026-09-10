@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { db } from './db.js';
 import type { Plan } from '@prisma/client';
-import { activateSubscription } from './payments.js';
+import { activateSubscriptionInTransaction } from './payments.js';
 
 export type PaidPlan = Exclude<Plan, 'FREE'>;
 
@@ -34,11 +34,9 @@ export async function redeemActivationCode(userId: number, rawCode: string) {
     if (activation.usedCount >= activation.maxUses) throw new Error('تم استنفاد هذا الكود.');
     const prior = await tx.activationCodeRedemption.findUnique({ where: { codeId_userId: { codeId: activation.id, userId } } });
     if (prior) throw new Error('تم استخدام هذا الكود على حسابك سابقًا.');
-    await tx.activationCodeRedemption.create({ data: { codeId: activation.id, userId } });
     const updated = await tx.activationCode.update({ where: { id: activation.id }, data: { usedCount: { increment: 1 }, active: activation.usedCount + 1 >= activation.maxUses ? false : true } });
-    return { activation: updated, plan: activation.plan, durationDays: activation.durationDays };
-  }).then(async result => {
-    await activateSubscription(userId, result.plan, result.durationDays, 'ACTIVATION_CODE', result.activation.code);
-    return result;
+    await tx.activationCodeRedemption.create({ data: { codeId: activation.id, userId } });
+    await activateSubscriptionInTransaction(tx, userId, activation.plan as PaidPlan, activation.durationDays, 'ACTIVATION_CODE', activation.code);
+    return { activation: updated, plan: activation.plan as PaidPlan, durationDays: activation.durationDays };
   });
 }
