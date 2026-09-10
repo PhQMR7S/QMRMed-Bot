@@ -1,10 +1,10 @@
 import { Bot } from 'grammy';
 import { registerFileAiHandlers } from './file-ai.js';
 
-const originalStart = Bot.prototype.start;
+const originalStart = Bot.prototype.start as (...args: any[]) => Promise<void>;
 const registered = new WeakSet<object>();
 
-Bot.prototype.start = function patchedStart(this: Bot, ...args: Parameters<typeof originalStart>) {
+Bot.prototype.start = function patchedStart(this: Bot, ...args: any[]) {
   if (!registered.has(this)) {
     registered.add(this);
     registerFileAiHandlers(this);
