@@ -1,0 +1,33 @@
+name: Google Drive Connection Check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drive-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BOT_TOKEN: ci-placeholder
+      DATABASE_URL: file:./ci.db
+      TRIAL_ENABLED: false
+      GOOGLE_DRIVE_ROOT_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_ROOT_FOLDER_ID }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Check Google Drive access
+        run: |
+          node --input-type=module - <<'NODE'
+          const { config } = await import('./dist-config-placeholder.js').catch(() => ({ config: null }));
+          NODE
+          npx tsx -e "import { listDriveFiles } from './src/drive.ts'; const id=process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID; if(!id) throw new Error('GOOGLE_DRIVE_ROOT_FOLDER_ID secret is missing'); if(!process.env.GOOGLE_SERVICE_ACCOUNT_JSON) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON secret is missing'); const files=await listDriveFiles(id); console.log('Google Drive connection: OK'); console.log('Files visible under QMRMed:', files.length); console.log('Sample paths:', files.slice(0,10).map(f=>f.path));"
