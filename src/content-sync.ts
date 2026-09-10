@@ -107,7 +107,11 @@ export async function syncGoogleDrive() {
         if (parts.length) await tx.contentChunk.createMany({ data: parts.map((part, i) => ({ sourceId: source.id, subjectId: subject?.id, kind, title: file.name, text: part, chunkIndex: i, driveFileId: file.id })) });
         await tx.contentSource.update({ where: { id: source.id }, data: { indexed: parts.length > 0, lastSyncedAt: new Date() } });
       });
-      indexed++; chunks += parts.length;
+      indexed++;
+      chunks += parts.length;
+    }
+    if (currentIds.size === 0) {
+      throw new Error('Google Drive scan found no indexable QMRMed files; stale-content cleanup was intentionally skipped. Verify the folder structure before retrying.');
     }
     const stale = await db.contentSource.findMany({ where: { driveFileId: { notIn: [...currentIds] }, indexed: true }, select: { id: true } });
     for (const source of stale) {
