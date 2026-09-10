@@ -1,9 +1,10 @@
 import type { Context } from 'grammy';
 import { db } from './db.js';
 import { config } from './config.js';
-import type { Plan } from '@prisma/client';
+import type { Plan, Prisma } from '@prisma/client';
 
 export type PaidPlan = Exclude<Plan, 'FREE'>;
+export type DbTx = Prisma.TransactionClient;
 
 export function planPrice(plan: PaidPlan) {
   return plan === 'PLUS' ? config.PLUS_STARS : config.PRO_STARS;
@@ -54,33 +55,35 @@ export async function validatePreCheckout(payload: string, fromTelegramId: numbe
   return { ok: true as const, parsed };
 }
 
-export async function activateSubscription(userId: number, plan: PaidPlan, days: number, provider: string, externalId?: string) {
+export async function activateSubscriptionInTransaction(tx: DbTx, userId: number, plan: PaidPlan, days: number, provider: string, externalId?: string) {
   const now = new Date();
-  return db.$transaction(async tx => {
-    const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
-    const current = await tx.subscription.findFirst({
-      where: { userId, plan, active: true, endsAt: { gt: now } },
-      orderBy: { endsAt: 'desc' },
-    });
-    const start = current?.endsAt && current.endsAt > now ? current.endsAt : now;
-    const ends = new Date(start.getTime() + days * 86_400_000);
-    if (current) {
-      await tx.subscription.update({ where: { id: current.id }, data: { endsAt: ends, active: true, externalId: externalId ?? current.externalId } });
-    } else {
-      await tx.subscription.create({ data: { userId, plan, provider, externalId, startsAt: start, endsAt: ends, active: true } });
-    }
-    return tx.user.update({ where: { id: user.id }, data: { plan } });
-  });
+  const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+  const current = await tx.subscription.findFirst({ where: { userId, plan, active: true, endsAt: { gt: now } }, orderBy: { endsAt: 'desc' } });
+  const start = current?.endsAt && current.endsAt > now ? current.endsAt : now;
+  const ends = new Date(start.getTime() + days * 86_400_000);
+  if (current) {
+    await tx.subscription.update({ where: { id: current.id }, data: { endsAt: ends, active: true, externalId: externalId ?? current.externalId } });
+  } else {
+    await tx.subscription.create({ data: { userId, plan, provider, externalId, startsAt: start, endsAt: ends, active: true } });
+  }
+  return tx.user.update({ where: { id: user.id }, data: { plan } });
+}
+
+export async function activateSubscription(userId: number, plan: PaidPlan, days: number, provider: string, externalId?: string) {
+  return db.$transaction(tx => activateSubscriptionInTransaction(tx, userId, plan, days, provider, externalId));
 }
 
 export async function recordSuccessfulStarsPayment(userId: number, payload: string, currency: string, totalAmount: number, telegramChargeId: string, providerChargeId: string) {
   const parsed = parsePaymentPayload(payload);
-  if (!parsed || parsed.telegramId !== (await db.user.findUniqueOrThrow({ where: { id: userId }, select: { telegramId: true } })).telegramId) throw new Error('Invalid payment payload.');
-  const existing = await db.paymentTransaction.findUnique({ where: { telegramPaymentChargeId: telegramChargeId } });
-  if (existing?.status === 'PAID') return { alreadyProcessed: true, plan: parsed.plan };
-  const payment = existing
-    ? await db.paymentTransaction.update({ where: { id: existing.id }, data: { status: 'PAID', currency, amount: totalAmount, providerPaymentChargeId: providerChargeId } })
-    : await db.paymentTransaction.create({ data: { userId, plan: parsed.plan, provider: 'TELEGRAM_STARS', currency, amount: totalAmount, payload, telegramPaymentChargeId: telegramChargeId, providerPaymentChargeId: providerChargeId, status: 'PAID' } });
-  await activateSubscription(userId, parsed.plan, parsed.days, 'TELEGRAM_STARS', payment.id.toString());
-  return { alreadyProcessed: false, plan: parsed.plan };
+  const user = await db.user.findUniqueOrThrow({ where: { id: userId }, select: { telegramId: true } });
+  if (!parsed || parsed.telegramId !== user.telegramId || currency !== 'XTR' || planPrice(parsed.plan) !== totalAmount) throw new Error('Invalid payment payload or amount.');
+  return db.$transaction(async tx => {
+    const existing = await tx.paymentTransaction.findUnique({ where: { telegramPaymentChargeId: telegramChargeId } });
+    if (existing?.status === 'PAID') return { alreadyProcessed: true, plan: parsed.plan };
+    const payment = existing
+      ? await tx.paymentTransaction.update({ where: { id: existing.id }, data: { status: 'PAID', currency, amount: totalAmount, providerPaymentChargeId: providerChargeId } })
+      : await tx.paymentTransaction.create({ data: { userId, plan: parsed.plan, provider: 'TELEGRAM_STARS', currency, amount: totalAmount, payload, telegramPaymentChargeId: telegramChargeId, providerPaymentChargeId: providerChargeId, status: 'PAID' } });
+    await activateSubscriptionInTransaction(tx, userId, parsed.plan, parsed.days, 'TELEGRAM_STARS', payment.id.toString());
+    return { alreadyProcessed: false, plan: parsed.plan };
+  });
 }
