@@ -7,11 +7,12 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
+    "start": "node dist/src/index.js",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "content:sync": "tsx src/sync-drive.ts",
+    "check-drive": "tsx scripts/check-drive.ts",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "tsx --test tests/*.test.ts",
     "smoke:bot": "tsx scripts/smoke-test.ts",
