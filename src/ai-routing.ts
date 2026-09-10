@@ -18,7 +18,8 @@ export function selectModelGroup(section: AISection, plan: Plan) {
 }
 
 export async function routedChat(section: AISection, plan: Plan, messages: AIMessage[], temperature = 0.2) {
-  return omniChat(messages, { model: selectModelGroup(section, plan), temperature });
+  const model = selectModelGroup(section, plan);
+  return omniChat(messages, { model, temperature });
 }
 
 export function aiRoutingSummary() {
