@@ -1,1 +1,0 @@
-// Command handlers are kept in src/index.ts so they share the bot instance and session state.
