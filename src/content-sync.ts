@@ -12,7 +12,10 @@ const DEPARTMENTS: Record<string, string> = {
   'طب أسنان': 'Dentistry',
 };
 
-const KIND_FOLDER_NAMES = new Set(['sources', 'source', 'cases', 'case', 'ministerial', 'ministerials', 'question bank', 'questions', 'references', 'reference', 'مصادر', 'المصادر', 'كيسات', 'كيس', 'وزاريات', 'وزاري', 'بنك الأسئلة', 'الأسئلة', 'مراجع', 'مرجع']);
+const KIND_FOLDER_NAMES = new Set([
+  'sources', 'source', 'cases', 'case', 'ministerial', 'ministerials', 'question bank', 'questions',
+  'references', 'reference', 'مصادر', 'المصادر', 'كيسات', 'كيس', 'وزاريات', 'وزاري', 'بنك الأسئلة', 'الأسئلة', 'مراجع', 'مرجع',
+]);
 
 function contentKind(path: string): ContentKind {
   const lower = path.toLocaleLowerCase();
@@ -24,12 +27,17 @@ function contentKind(path: string): ContentKind {
 }
 
 function metadataFromPath(path: string) {
-  const parts = path.split('/').slice(0, -1).filter(Boolean);
-  const normalized = parts.map((part) => DEPARTMENTS[part.trim().toLocaleLowerCase()] ?? part.trim());
-  const department = normalized.find((part) => Object.values(DEPARTMENTS).includes(part)) ?? normalized[0] ?? null;
+  const parts = path.split('/').slice(0, -1).filter(Boolean).map((part) => part.trim());
+  const normalized = parts.map((part) => DEPARTMENTS[part.toLocaleLowerCase()] ?? part);
+  const departmentIndex = normalized.findIndex((part) => Object.values(DEPARTMENTS).includes(part));
+  const department = departmentIndex >= 0 ? normalized[departmentIndex] : normalized[0] ?? null;
   const stage = normalized.find((part) => /(?:stage|year|مرحلة|سنة)\s*[-_ ]*\d+/i.test(part)) ?? null;
-  const candidates = normalized.filter((part) => !KIND_FOLDER_NAMES.has(part.toLocaleLowerCase()));
-  const subjectName = candidates[candidates.length - 1] ?? null;
+
+  // The subject is the folder immediately above Sources/References/Question Bank/Ministerial.
+  // This preserves the real subject for paths such as Medicine/Stage 1/Anatomy/Sources/Lectures/file.pdf.
+  const kindIndex = normalized.findIndex((part) => KIND_FOLDER_NAMES.has(part.toLocaleLowerCase()));
+  const subjectName = kindIndex > 0 ? normalized[kindIndex - 1] : null;
+
   return { department, stage, subjectName };
 }
 
