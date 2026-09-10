@@ -54,10 +54,23 @@ export function plansMenu() {
     .text('🔥 PRO — 5 أشهر | 1000⭐', 'plan:PRO:150').row()
     .text('🏆 PLUS — سنة | 1000⭐', 'plan:PLUS:365').row()
     .text('🏆 PRO — سنة | 2000⭐', 'plan:PRO:365').row()
-    .text('💳 طرق الدفع الأخرى', 'payment_methods').row()
+    .text('💳 الاشتراك والتفعيل الخارجي', 'payment_methods').row()
     .text('🎟️ تفعيل كود اشتراك', 'redeem_code').row()
     .text('📜 الشروط', 'terms').text('🆘 دعم الدفع', 'paysupport').row()
     .text('⬅️ الرئيسية', 'home');
+}
+
+export function externalPaymentMenu() {
+  return new InlineKeyboard()
+    .text('💙 PLUS — شهر | 5$', 'manual:PLUS:30').row()
+    .text('💜 PRO — شهر | 10$', 'manual:PRO:30').row()
+    .text('🔥 PLUS — 5 أشهر | 10$', 'manual:PLUS:150').row()
+    .text('🔥 PRO — 5 أشهر | 20$', 'manual:PRO:150').row()
+    .text('🏆 PLUS — سنة | 20$', 'manual:PLUS:365').row()
+    .text('🏆 PRO — سنة | 40$', 'manual:PRO:365').row()
+    .text('🎟️ لدي كود تفعيل', 'redeem_code').row()
+    .text('⬅️ الاشتراكات', 'plans').row()
+    .text('🏠 الرئيسية', 'home');
 }
 
 export function adminMenu() {
