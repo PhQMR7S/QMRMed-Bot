@@ -34,18 +34,10 @@ export async function redeemActivationCode(userId: number, rawCode: string) {
     if (activation.usedCount >= activation.maxUses) throw new Error('تم استنفاد هذا الكود.');
     const prior = await tx.activationCodeRedemption.findUnique({ where: { codeId_userId: { codeId: activation.id, userId } } });
     if (prior) throw new Error('تم استخدام هذا الكود على حسابك سابقًا.');
-
-    const claimed = await tx.activationCode.updateMany({
-      where: { id: activation.id, active: true, usedCount: { lt: activation.maxUses } },
-      data: { usedCount: { increment: 1 } },
-    });
+    const claimed = await tx.activationCode.updateMany({ where: { id: activation.id, active: true, usedCount: { lt: activation.maxUses } }, data: { usedCount: { increment: 1 } } });
     if (claimed.count !== 1) throw new Error('تم استنفاد هذا الكود أو تم استخدامه الآن.');
-
     const updated = await tx.activationCode.findUniqueOrThrow({ where: { id: activation.id } });
-    if (updated.usedCount >= updated.maxUses) {
-      await tx.activationCode.update({ where: { id: updated.id }, data: { active: false } });
-    }
-
+    if (updated.usedCount >= updated.maxUses) await tx.activationCode.update({ where: { id: updated.id }, data: { active: false } });
     await tx.activationCodeRedemption.create({ data: { codeId: activation.id, userId } });
     await activateSubscriptionInTransaction(tx, userId, activation.plan as PaidPlan, activation.durationDays, 'ACTIVATION_CODE', activation.code);
     return { activation: updated, plan: activation.plan as PaidPlan, durationDays: activation.durationDays };
