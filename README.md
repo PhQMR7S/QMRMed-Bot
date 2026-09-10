@@ -68,11 +68,11 @@ Supported directly by the current synchronizer:
 
 Scanned/image-only PDFs still require OCR and are not falsely marked as successfully indexed when no text can be extracted. Binary files outside the supported formats are skipped safely.
 
-### File size policy
+## File size policy
 
 There is **no application-level file-size limit** for QMRMed Drive sources. Large textbooks, reference PDFs and other source files are allowed because the Drive corpus is expected to contain substantial medical references.
 
-The synchronizer downloads a supported file and extracts its text before chunking it. Therefore, very large PDFs can still be constrained by the available memory, processing time, Google Drive/API behavior, or the CI runner resources; these are infrastructure/runtime constraints, not an imposed QMRMed file-size ceiling.
+The synchronizer downloads a supported file and extracts its text before chunking it. Therefore, very large PDFs can still be constrained by available memory, processing time, Google Drive/API behavior, or runner resources; these are infrastructure/runtime constraints, not an imposed QMRMed file-size ceiling.
 
 For production, large-file processing should run in a sufficiently resourced persistent worker rather than relying on GitHub Actions as the production indexer.
 
@@ -83,14 +83,31 @@ The bot does not call a model provider directly. It calls the OpenAI-compatible 
 ```text
 Student question
       ↓
+Saved department/stage profile
+      ↓
 Approved QMRMed Drive index
       ↓
 Relevant source / case / question / ministerial chunks
       ↓
-OmniRoute
+Section-specific OmniRoute group (or OmniRoute auto fallback)
       ↓
 Arabic answer grounded in QMRMed content
 ```
+
+Section-specific groups can be configured with:
+
+```env
+OMNIROUTE_GROUP_DEFAULT=auto
+OMNIROUTE_GROUP_STUDY=study-combo
+OMNIROUTE_GROUP_CASES=cases-combo
+OMNIROUTE_GROUP_QUESTIONS=questions-combo
+OMNIROUTE_GROUP_MINISTERIAL=ministerial-combo
+OMNIROUTE_GROUP_EXAMS=exams-combo
+OMNIROUTE_GROUP_SEARCH=search-combo
+OMNIROUTE_GROUP_ADMIN=fast-combo
+```
+
+These values are OmniRoute model/combo identifiers. When a specific group is not configured, the gateway default is used; for PRO the gateway's normal default/auto routing remains available.
 
 If no approved QMRMed context is found, the AI refuses to invent an answer from general knowledge. Any legacy lesson context passed by older bot code is ignored as an AI source; Drive-approved retrieval is authoritative.
 
@@ -127,6 +144,14 @@ ADMIN_IDS=your_telegram_id
 OMNIROUTE_URL="http://127.0.0.1:20128"
 OMNIROUTE_API_KEY=your_omniroute_endpoint_key
 OMNIROUTE_MODEL=auto
+OMNIROUTE_GROUP_DEFAULT=auto
+OMNIROUTE_GROUP_STUDY=
+OMNIROUTE_GROUP_CASES=
+OMNIROUTE_GROUP_QUESTIONS=
+OMNIROUTE_GROUP_MINISTERIAL=
+OMNIROUTE_GROUP_EXAMS=
+OMNIROUTE_GROUP_SEARCH=
+OMNIROUTE_GROUP_ADMIN=
 ```
 
 Google Drive configuration:
@@ -148,15 +173,46 @@ After the Drive credentials and root folder are configured:
 npm run content:sync
 ```
 
-The command recursively scans the configured root folder, extracts supported text, updates the source metadata and rebuilds its content chunks. Re-running the command is safe for the same Drive file because unchanged files are skipped and changed files have their chunks replaced. Files removed from the configured Drive tree are removed from the searchable index and approval is revoked.
+The command recursively scans the configured root folder, extracts supported text, normalizes department/stage metadata, updates source metadata and rebuilds content chunks. Re-running the command is safe for the same Drive file because unchanged files are skipped and changed files have their chunks replaced. Files removed from the configured Drive tree are removed from the searchable index and approval is revoked.
 
-The GitHub full-sync check uses a disposable PostgreSQL service database only for validation. It verifies that the configured Drive corpus can be scanned and indexed successfully; it does not populate the production database.
+The synchronizer refuses stale-content cleanup when a scan returns zero files or no indexable QMRMed files, protecting the existing index from an accidental empty-folder/credential outage.
 
-For production, run this command from the deployment scheduler whenever Drive content changes. Google Drive also provides APIs/events for monitoring file activity, so the same sync layer can later be changed from scheduled full scans to event-driven incremental synchronization.
+## Telegram commands
+
+```text
+/start
+/help
+/study
+/search
+/ai
+/questions
+/ministerial
+/exams
+/progress
+/plans
+/trial
+/account
+/settings
+/about
+/cancel
+/admin
+```
+
+The bot verifies its Telegram identity and command surface with `npm run check:telegram`.
+
+## Payments
+
+QMRMed subscription buttons are deliberately not treated as payment by themselves. Production digital-goods purchases inside Telegram must use Telegram Stars (`XTR`), with the normal invoice → pre-checkout → successful-payment flow and persistent transaction identifiers. The bot should only grant PLUS/PRO after receiving and validating a successful payment update. Telegram also recommends `/terms` and `/paysupport` for live digital-goods bots. See the official Telegram Payments guide for the current requirements. https://core.telegram.org/bots/payments-stars
+
+The repository currently keeps the payment UI in a safe non-granting state until the exact PLUS/PRO Star prices and billing durations are finalized.
 
 ## OmniRoute
 
-Run OmniRoute separately and configure at least one provider and an endpoint API key. Its OpenAI-compatible API is exposed under `/v1`; fallback chains and provider routing are configured in the OmniRoute dashboard.
+Run OmniRoute separately and configure at least one provider and an endpoint API key. Its OpenAI-compatible API is exposed under `/v1`; fallback chains and provider routing are configured in the OmniRoute dashboard. QMRMed can select a named OmniRoute group per feature while retaining gateway-level auto fallback.
+
+## Production database
+
+The repository is prepared for PostgreSQL, but the currently connected Neon project contains a different broader schema and is not yet a drop-in match for the bot's Prisma models. A production database reconciliation/migration must be completed before the deployed bot switches to that database. Existing SQLite deployments also require an explicit data migration before changing providers.
 
 ## Future platform integration
 
