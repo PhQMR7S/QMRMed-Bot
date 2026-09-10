@@ -1,0 +1,28 @@
+name: Bot Smoke Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      OMNIROUTE_URL: ${{ secrets.OMNIROUTE_URL }}
+      OMNIROUTE_API_KEY: ${{ secrets.OMNIROUTE_API_KEY }}
+      OMNIROUTE_MODEL: ${{ secrets.OMNIROUTE_MODEL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Run Telegram and OmniRoute smoke test
+        run: npm run smoke:bot
