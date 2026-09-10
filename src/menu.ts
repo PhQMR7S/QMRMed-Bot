@@ -30,6 +30,22 @@ export function lessonMenu(lessons: { id: number; title: string }[], topicId: nu
   return keyboard.text('⬅️ المواضيع', `topicback:${topicId}:${subjectId}`).row().text('🏠 الرئيسية', 'home');
 }
 
+export function studyDepartmentMenu() {
+  return new InlineKeyboard()
+    .text('🩺 طب عام', 'study:department:Medicine').row()
+    .text('🦷 طب أسنان', 'study:department:Dentistry').row()
+    .text('💊 صيدلة', 'study:department:Pharmacy').row()
+    .text('🏠 الرئيسية', 'home');
+}
+
+export function studyStageMenu(department: string) {
+  return new InlineKeyboard()
+    .text('1️⃣ المرحلة 1', `study:stage:${department}:1`).text('2️⃣ المرحلة 2', `study:stage:${department}:2`).row()
+    .text('3️⃣ المرحلة 3', `study:stage:${department}:3`).text('4️⃣ المرحلة 4', `study:stage:${department}:4`).row()
+    .text('5️⃣ المرحلة 5', `study:stage:${department}:5`).text('6️⃣ المرحلة 6', `study:stage:${department}:6`).row()
+    .text('⬅️ الأقسام', 'study_mode').row().text('🏠 الرئيسية', 'home');
+}
+
 export function adminMenu() {
   return new InlineKeyboard()
     .text('📊 Dashboard', 'admin:stats').text('👥 المستخدمون', 'admin:users').row()
