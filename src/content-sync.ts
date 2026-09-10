@@ -13,31 +13,49 @@ const DEPARTMENTS: Record<string, string> = {
 };
 
 const KIND_FOLDER_NAMES = new Set([
-  'sources', 'source', 'cases', 'case', 'ministerial', 'ministerials', 'question bank', 'questions',
-  'references', 'reference', 'مصادر', 'المصادر', 'كيسات', 'كيس', 'وزاريات', 'وزاري', 'بنك الأسئلة', 'الأسئلة', 'مراجع', 'مرجع',
+  'sources', 'source', 'ministerial', 'ministerials', 'question bank', 'questions',
+  'references', 'reference', 'مصادر', 'المصادر', 'وزاريات', 'وزاري', 'بنك الأسئلة', 'الأسئلة', 'مراجع', 'مرجع',
 ]);
 
-function contentKind(path: string): ContentKind {
-  const lower = path.toLocaleLowerCase();
-  if (lower.includes('ministerial') || lower.includes('وزاري') || lower.includes('وزاريات')) return 'MINISTERIAL';
-  if (lower.includes('case') || lower.includes('cases') || lower.includes('كيس')) return 'CASE';
-  if (lower.includes('question') || lower.includes('questions') || lower.includes('بنك') || lower.includes('سؤال')) return 'QUESTION';
-  if (lower.includes('reference') || lower.includes('references') || lower.includes('مرجع')) return 'REFERENCE';
-  return 'SOURCE';
+const EXCLUDED_PATH_SEGMENTS = new Set([
+  '99 - system',
+  '99 - other',
+  '01 - import',
+  '02 - review',
+  '03 - archive',
+  '04 - rejected',
+  '05 - temporary',
+  '05 - duplicates',
+  '04 - processed',
+  '03 - needs review',
+]);
+
+function normalizedSegments(path: string) {
+  return path.split('/').filter(Boolean).map((part) => part.trim());
+}
+
+function shouldIndexPath(path: string) {
+  const segments = normalizedSegments(path).slice(0, -1);
+  return !segments.some((segment) => EXCLUDED_PATH_SEGMENTS.has(segment.toLocaleLowerCase()));
+}
+
+function contentKind(path: string): ContentKind | null {
+  const segments = normalizedSegments(path).slice(0, -1).map((part) => part.toLocaleLowerCase());
+  if (segments.some((part) => part.includes('ministerial') || part.includes('وزاري') || part.includes('وزاريات'))) return 'MINISTERIAL';
+  if (segments.some((part) => part.includes('question bank') || part === 'questions' || part.includes('بنك الأسئلة') || part === 'الأسئلة')) return 'QUESTION';
+  if (segments.some((part) => part === 'references' || part === 'reference' || part.includes('مرجع') || part.includes('medical references') || part.includes('shared references'))) return 'REFERENCE';
+  if (segments.some((part) => part === 'sources' || part === 'source' || part.includes('مصادر') || part === 'المصادر')) return 'SOURCE';
+  return null;
 }
 
 function metadataFromPath(path: string) {
-  const parts = path.split('/').slice(0, -1).filter(Boolean).map((part) => part.trim());
+  const parts = normalizedSegments(path).slice(0, -1);
   const normalized = parts.map((part) => DEPARTMENTS[part.toLocaleLowerCase()] ?? part);
   const departmentIndex = normalized.findIndex((part) => Object.values(DEPARTMENTS).includes(part));
-  const department = departmentIndex >= 0 ? normalized[departmentIndex] : normalized[0] ?? null;
+  const department = departmentIndex >= 0 ? normalized[departmentIndex] : null;
   const stage = normalized.find((part) => /(?:stage|year|مرحلة|سنة)\s*[-_ ]*\d+/i.test(part)) ?? null;
-
-  // The subject is the folder immediately above Sources/References/Question Bank/Ministerial.
-  // This preserves the real subject for paths such as Medicine/Stage 1/Anatomy/Sources/Lectures/file.pdf.
   const kindIndex = normalized.findIndex((part) => KIND_FOLDER_NAMES.has(part.toLocaleLowerCase()));
   const subjectName = kindIndex > 0 ? normalized[kindIndex - 1] : null;
-
   return { department, stage, subjectName };
 }
 
@@ -84,9 +102,20 @@ export async function syncGoogleDrive() {
     let skipped = 0;
     let removed = 0;
     let chunks = 0;
-    const currentIds = new Set(files.map((file) => file.id));
+    const currentIds = new Set<string>();
 
     for (const file of files) {
+      if (!shouldIndexPath(file.path)) {
+        skipped++;
+        continue;
+      }
+      const kind = contentKind(file.path);
+      if (!kind) {
+        skipped++;
+        continue;
+      }
+      currentIds.add(file.id);
+
       const existing = await db.contentSource.findUnique({ where: { driveFileId: file.id }, select: { id: true, checksum: true, modifiedTime: true, indexed: true } });
       const modified = file.modifiedTime ? new Date(file.modifiedTime) : null;
       const unchanged = existing && existing.indexed && existing.checksum === file.md5Checksum && existing.modifiedTime?.getTime() === modified?.getTime();
@@ -97,7 +126,6 @@ export async function syncGoogleDrive() {
 
       const text = await downloadDriveText(file);
       const meta = metadataFromPath(file.path);
-      const kind = contentKind(file.path);
       const source = await db.contentSource.upsert({
         where: { driveFileId: file.id },
         create: {
@@ -128,6 +156,7 @@ export async function syncGoogleDrive() {
       if (!text?.trim()) {
         skipped++;
         await db.contentChunk.deleteMany({ where: { sourceId: source.id } });
+        await db.contentSource.update({ where: { id: source.id }, data: { indexed: false } });
         continue;
       }
 
@@ -156,7 +185,7 @@ export async function syncGoogleDrive() {
       chunks += parts.length;
     }
 
-    const stale = await db.contentSource.findMany({ where: { driveFileId: { notIn: [...currentIds] }, indexed: true }, select: { id: true, driveFileId: true } });
+    const stale = await db.contentSource.findMany({ where: { driveFileId: { notIn: [...currentIds] }, indexed: true }, select: { id: true } });
     for (const source of stale) {
       await db.$transaction([
         db.contentChunk.deleteMany({ where: { sourceId: source.id } }),
