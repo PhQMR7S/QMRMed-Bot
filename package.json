@@ -13,7 +13,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "content:sync": "tsx src/sync-drive.ts",
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "smoke:bot": "tsx scripts/smoke-test.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
