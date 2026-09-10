@@ -28,7 +28,7 @@ Google Drive
     ↓
 QMRMed Content Sync
     ↓
-ContentSource + ContentChunk index (Prisma)
+ContentSource + ContentChunk index (Prisma/PostgreSQL)
     ↓
 Approved-content retrieval
     ↓
@@ -72,7 +72,7 @@ Scanned/image-only PDFs still require OCR and are not falsely marked as successf
 
 There is **no application-level file-size limit** for QMRMed Drive sources. Large textbooks, reference PDFs and other source files are allowed because the Drive corpus is expected to contain substantial medical references.
 
-The synchronizer downloads a supported file and extracts its text before chunking it. Therefore, very large PDFs can still be constrained by the available memory, processing time, Google Drive/API behavior, or the GitHub Actions runner resources; these are infrastructure/runtime constraints, not an imposed QMRMed file-size ceiling.
+The synchronizer downloads a supported file and extracts its text before chunking it. Therefore, very large PDFs can still be constrained by the available memory, processing time, Google Drive/API behavior, or the CI runner resources; these are infrastructure/runtime constraints, not an imposed QMRMed file-size ceiling.
 
 For production, large-file processing should run in a sufficiently resourced persistent worker rather than relying on GitHub Actions as the production indexer.
 
@@ -99,10 +99,10 @@ If no approved QMRMed context is found, the AI refuses to invent an answer from 
 - TypeScript + Node.js 22
 - grammY Telegram framework
 - Prisma ORM
-- SQLite for the first standalone deployment
+- PostgreSQL for the persistent production database
 - Google Drive API (read-only service-account access)
 - OmniRoute as the AI gateway
-- GitHub Actions CI
+- GitHub Actions CI with PostgreSQL service containers
 
 ## Configuration
 
@@ -122,7 +122,7 @@ Required secrets/configuration:
 
 ```env
 BOT_TOKEN=your_telegram_bot_token
-DATABASE_URL="file:./dev.db"
+DATABASE_URL="postgresql://user:password@host:5432/qmrmed"
 ADMIN_IDS=your_telegram_id
 OMNIROUTE_URL="http://127.0.0.1:20128"
 OMNIROUTE_API_KEY=your_omniroute_endpoint_key
@@ -150,7 +150,7 @@ npm run content:sync
 
 The command recursively scans the configured root folder, extracts supported text, updates the source metadata and rebuilds its content chunks. Re-running the command is safe for the same Drive file because unchanged files are skipped and changed files have their chunks replaced. Files removed from the configured Drive tree are removed from the searchable index and approval is revoked.
 
-The GitHub full-sync check uses an ephemeral SQLite database only for validation. It verifies that the configured Drive corpus can be scanned and indexed successfully; it does not populate the production database.
+The GitHub full-sync check uses a disposable PostgreSQL service database only for validation. It verifies that the configured Drive corpus can be scanned and indexed successfully; it does not populate the production database.
 
 For production, run this command from the deployment scheduler whenever Drive content changes. Google Drive also provides APIs/events for monitoring file activity, so the same sync layer can later be changed from scheduled full scans to event-driven incremental synchronization.
 
