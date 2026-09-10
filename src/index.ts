@@ -140,7 +140,7 @@ bot.command('terms', async ctx => ctx.reply('📜 شروط الاستخدام\n\
 bot.command('paysupport', async ctx => ctx.reply(`💳 دعم الدفع\n\nللاشتراكات الرقمية داخل تيليجرام استخدم Telegram Stars.\n\nللطرق اليدوية/الخارجية، تواصل مع دعم QMRMed لإثبات العملية ثم يقوم الأدمن بالتفعيل.\n\n${config.SUPPORT_HANDLE ? `الدعم: ${config.SUPPORT_HANDLE}\n` : ''}لا ترسل مفاتيح أو رموزًا سرية.`, { reply_markup: backMenu }));
 bot.command('cancel', async ctx => { pending.delete(userKey(ctx)); sessions.delete(userKey(ctx)); await ctx.reply('❌ تم إلغاء العملية الحالية.', { reply_markup: mainMenu }); });
 
-bot.preCheckoutQuery(async ctx => {
+bot.on('pre_checkout_query', async ctx => {
   const q = ctx.preCheckoutQuery;
   const result = await validatePreCheckout(q.invoice_payload, q.from.id, q.currency, q.total_amount);
   if (result.ok) return ctx.api.raw.answerPreCheckoutQuery({ pre_checkout_query_id: q.id, ok: true });
