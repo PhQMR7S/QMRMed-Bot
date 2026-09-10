@@ -43,7 +43,15 @@ export function adminMenu() {
   return new InlineKeyboard().text('📊 Dashboard', 'admin:stats').text('👥 المستخدمون', 'admin:users').row().text('📚 المحتوى', 'admin:content').text('☁️ Google Drive', 'admin:drive').row().text('🤖 OmniRoute / AI', 'admin:ai').text('📣 الإرسال الجماعي', 'admin:broadcast').row().text('📝 الأسئلة والوزاريات', 'admin:questions').row().text('🎟️ أكواد الاشتراك', 'admin:codes').row().text('⬅️ الرئيسية', 'home');
 }
 export function adminCodesMenu() {
-  return new InlineKeyboard().text('💙 PLUS — 30 يوم', 'admin:code:create:PLUS:30').text('💜 PRO — 30 يوم', 'admin:code:create:PRO:30').row().text('💙 PLUS — 150 يوم', 'admin:code:create:PLUS:150').text('💜 PRO — 150 يوم', 'admin:code:create:PRO:150').row().text('💙 PLUS — 365 يوم', 'admin:code:create:PLUS:365').text('💜 PRO — 365 يوم', 'admin:code:create:PRO:365').row().text('⬅️ لوحة الإدارة', 'admin');
+  return new InlineKeyboard().text('💙 PLUS — 30 يوم', 'admin:code:create:PLUS:30').text('💜 PRO — 30 يوم', 'admin:code:create:PRO:30').row().text('💙 PLUS — 150 يوم', 'admin:code:create:PLUS:150').text('💜 PRO — 150 يوم', 'admin:code:create:PRO:150').row().text('💙 PLUS — 365 يوم', 'admin:code:create:PLUS:365').text('💜 PRO — 365 يوم', 'admin:code:create:PRO:365').row().text('📋 عرض الأكواد', 'admin:codes:list').row().text('⬅️ لوحة الإدارة', 'admin');
+}
+export function adminCodeListMenu(codes: Array<{ id: number; active: boolean }>) {
+  const keyboard = new InlineKeyboard();
+  for (const code of codes) keyboard.text(`${code.active ? '🟢' : '🔴'} #${code.id}`, `admin:code:view:${code.id}`).row();
+  return keyboard.text('➕ إنشاء كود', 'admin:codes').row().text('⬅️ لوحة الإدارة', 'admin');
+}
+export function adminCodeDetailMenu(id: number, active: boolean) {
+  return new InlineKeyboard().text(active ? '⛔ تعطيل الكود' : '✅ تفعيل الكود', `admin:code:toggle:${id}`).row().text('🔄 تحديث', `admin:code:view:${id}`).row().text('📋 كل الأكواد', 'admin:codes:list').row().text('⬅️ لوحة الإدارة', 'admin');
 }
 export function adminDriveMenu() {
   return new InlineKeyboard().text('🔄 مزامنة الآن', 'admin:drive:sync').row().text('🔎 تحديث الحالة', 'admin:drive:status').row().text('⬅️ لوحة الإدارة', 'admin');
