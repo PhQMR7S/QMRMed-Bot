@@ -5,7 +5,8 @@ const bot = new Bot(config.BOT_TOKEN);
 
 const expectedCommands = [
   'start','help','study','search','ai','questions','ministerial','exams',
-  'progress','plans','trial','account','settings','about','cancel','admin',
+  'progress','plans','trial','redeem','account','settings','about','terms',
+  'paysupport','cancel','admin',
 ] as const;
 
 const me = await bot.api.getMe();
