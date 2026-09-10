@@ -1,0 +1,142 @@
+name: Complete manual activation flow
+
+on:
+  workflow_dispatch:
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/qmrmed-final-completion
+          fetch-depth: 0
+      - name: Apply activation flow
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          menu = Path('src/menu.ts')
+          s = menu.read_text()
+          old = """export function plansMenu() {\n  return new InlineKeyboard()\n    .text('💙 PLUS — شهر | 250⭐', 'plan:PLUS:30').row()\n    .text('💜 PRO — شهر | 500⭐', 'plan:PRO:30').row()\n    .text('🔥 PLUS — 5 أشهر | 500⭐', 'plan:PLUS:150').row()\n    .text('🔥 PRO — 5 أشهر | 1000⭐', 'plan:PRO:150').row()\n    .text('🏆 PLUS — سنة | 1000⭐', 'plan:PLUS:365').row()\n    .text('🏆 PRO — سنة | 2000⭐', 'plan:PRO:365').row()\n    .text('💳 طرق الدفع الأخرى', 'payment_methods').row()\n    .text('🎟️ تفعيل كود اشتراك', 'redeem_code').row()\n    .text('📜 الشروط', 'terms').text('🆘 دعم الدفع', 'paysupport').row()\n    .text('⬅️ الرئيسية', 'home');\n}\n"""
+          new = """export function plansMenu() {\n  return new InlineKeyboard()\n    .text('💙 PLUS — شهر | 250⭐', 'plan:PLUS:30').row()\n    .text('💜 PRO — شهر | 500⭐', 'plan:PRO:30').row()\n    .text('🔥 PLUS — 5 أشهر | 500⭐', 'plan:PLUS:150').row()\n    .text('🔥 PRO — 5 أشهر | 1000⭐', 'plan:PRO:150').row()\n    .text('🏆 PLUS — سنة | 1000⭐', 'plan:PLUS:365').row()\n    .text('🏆 PRO — سنة | 2000⭐', 'plan:PRO:365').row()\n    .text('💳 الاشتراك والتفعيل الخارجي', 'payment_methods').row()\n    .text('🎟️ تفعيل كود اشتراك', 'redeem_code').row()\n    .text('📜 الشروط', 'terms').text('🆘 دعم الدفع', 'paysupport').row()\n    .text('⬅️ الرئيسية', 'home');\n}\n\nexport function externalPaymentMenu() {\n  return new InlineKeyboard()\n    .text('💙 PLUS — شهر | 5$', 'manual:PLUS:30').row()\n    .text('💜 PRO — شهر | 10$', 'manual:PRO:30').row()\n    .text('🔥 PLUS — 5 أشهر | 10$', 'manual:PLUS:150').row()\n    .text('🔥 PRO — 5 أشهر | 20$', 'manual:PRO:150').row()\n    .text('🏆 PLUS — سنة | 20$', 'manual:PLUS:365').row()\n    .text('🏆 PRO — سنة | 40$', 'manual:PRO:365').row()\n    .text('🎟️ لدي كود تفعيل', 'redeem_code').row()\n    .text('⬅️ الاشتراكات', 'plans').row()\n    .text('🏠 الرئيسية', 'home');\n}\n"""
+          if old not in s:
+              raise SystemExit('plansMenu block not found')
+          menu.write_text(s.replace(old, new))
+
+          activation = Path('src/activation.ts')
+          s = activation.read_text()
+          old_start = """    if (activation.usedCount >= activation.maxUses) throw new Error('تم استنفاد هذا الكود.');\n    const prior = await tx.activationCodeRedemption.findUnique({ where: { codeId_userId: { codeId: activation.id, userId } } });\n    if (prior) throw new Error('تم استخدام هذا الكود على حسابك سابقًا.');\n    const updated = await tx.activationCode.update({ where: { id: activation.id }, data: { usedCount: { increment: 1 }, active: activation.usedCount + 1 >= activation.maxUses ? false : true } });\n    await tx.activationCodeRedemption.create({ data: { codeId: activation.id, userId } });\n"""
+          new_start = """    if (activation.usedCount >= activation.maxUses) throw new Error('تم استنفاد هذا الكود.');\n    const prior = await tx.activationCodeRedemption.findUnique({ where: { codeId_userId: { codeId: activation.id, userId } } });\n    if (prior) throw new Error('تم استخدام هذا الكود على حسابك سابقًا.');\n    const claimed = await tx.activationCode.updateMany({\n      where: { id: activation.id, active: true, usedCount: { lt: activation.maxUses } },\n      data: { usedCount: { increment: 1 } },\n    });\n    if (claimed.count !== 1) throw new Error('تم استنفاد هذا الكود أو تم استخدامه الآن.');\n    const updated = await tx.activationCode.findUniqueOrThrow({ where: { id: activation.id } });\n    if (updated.usedCount >= updated.maxUses) await tx.activationCode.update({ where: { id: updated.id }, data: { active: false } });\n    await tx.activationCodeRedemption.create({ data: { codeId: activation.id, userId } });\n"""
+          if old_start not in s:
+              raise SystemExit('activation redemption block not found')
+          activation.write_text(s.replace(old_start, new_start))
+
+          idx = Path('src/index.ts')
+          s = idx.read_text()
+          s = s.replace("backMenu, mainMenu, subjectMenu, topicMenu, lessonMenu, adminMenu, adminDriveMenu, studyDepartmentMenu, studyStageMenu, adminCodesMenu, plansMenu", "backMenu, mainMenu, subjectMenu, topicMenu, lessonMenu, adminMenu, adminDriveMenu, studyDepartmentMenu, studyStageMenu, adminCodesMenu, plansMenu, externalPaymentMenu")
+          old_account = "return render(ctx, `👤 حسابي\\n\\n🆔 Telegram ID: ${user.telegramId}\\n👤 الاسم: ${name}\\n🎯 القسم: ${user.department ?? 'غير محدد'}\\n📚 المرحلة: ${user.stage ?? 'غير محددة'}\\n💎 الخطة: ${user.plan}\\n🎁 التجربة: ${user.trialUsed ? 'مستخدمة' : 'متاحة'}`, new InlineKeyboard().text('🎯 تغيير القسم/المرحلة', 'study_mode').row().text('🏠 الرئيسية', 'home'));"
+          new_account = "return render(ctx, `👤 حسابي\\n\\n🆔 Telegram ID: ${user.telegramId}\\n👤 الاسم: ${name}\\n🎯 القسم: ${user.department ?? 'غير محدد'}\\n📚 المرحلة: ${user.stage ?? 'غير محددة'}\\n💎 الخطة: ${user.plan}\\n🎁 التجربة: ${user.trialUsed ? 'مستخدمة' : 'متاحة'}`, new InlineKeyboard().text('🎟️ إدخال كود التفعيل', 'redeem_code').row().text('🎯 تغيير القسم/المرحلة', 'study_mode').row().text('💎 الاشتراك والتفعيل', 'plans').row().text('🏠 الرئيسية', 'home'));"
+          if old_account not in s:
+              raise SystemExit('account line not found')
+          s = s.replace(old_account, new_account)
+
+          anchor = "bot.callbackQuery('home', async ctx => {"
+          if "bot.callbackQuery('payment_methods'" not in s:
+              block = r'''bot.callbackQuery('payment_methods', async ctx => {
+  await ctx.answerCallbackQuery();
+  return render(ctx, `💳 الاشتراك والتفعيل الخارجي
+
+مرحبًا بك في QMRMed 👋
+
+يمكنك الدفع خارجيًا عبر:
+💳 Mastercard: ${config.MASTERCARD_ACCOUNT}
+💵 Zain Cash: ${config.ZAINCASH_NUMBER}
+
+⚠️ هذه الطريقة يدوية وخارج نظام Telegram Stars. لا يتم تفعيل الاشتراك تلقائيًا.
+
+اختر خطتك ومدة الاشتراك أولًا، ثم ستظهر لك تعليمات الدفع والتفعيل كاملة.`, externalPaymentMenu());
+});
+
+bot.callbackQuery(/^manual:(PLUS|PRO):(30|150|365)$/, async ctx => {
+  await ctx.answerCallbackQuery();
+  const plan = ctx.match[1] as 'PLUS' | 'PRO';
+  const days = Number(ctx.match[2]) as 30 | 150 | 365;
+  const price = plan === 'PLUS' ? (days === 30 ? config.PLUS_MONTH_STARS / 50 : days === 150 ? config.PLUS_5MONTH_STARS / 50 : config.PLUS_YEAR_STARS / 50) : (days === 30 ? config.PRO_MONTH_STARS / 50 : days === 150 ? config.PRO_5MONTH_STARS / 50 : config.PRO_YEAR_STARS / 50);
+  const duration = days === 30 ? 'شهر واحد' : days === 150 ? '5 أشهر' : 'سنة واحدة';
+  return render(ctx, `👋 أهلًا بك في QMRMed
+
+📦 الاشتراك المختار: ${plan}
+📅 المدة: ${duration}
+💵 المبلغ المطلوب: ${price}$
+
+💳 Mastercard: ${config.MASTERCARD_ACCOUNT}
+💵 Zain Cash: ${config.ZAINCASH_NUMBER}
+
+📋 تعليمات التفعيل:
+1️⃣ أرسل المبلغ كاملًا إلى إحدى وسائل الدفع أعلاه.
+2️⃣ احتفظ بصورة واضحة لإيصال الدفع.
+3️⃣ أرسل صورة الإيصال مع اسم الخطة والمدة إلى ${config.SUPPORT_HANDLE || '@ID29i'}.
+4️⃣ أرسل أيضًا Telegram ID الخاص بك عند الطلب لتجنب أي خطأ في التفعيل.
+5️⃣ بعد التحقق من المبلغ والإيصال، سيرسل لك الدعم كود التفعيل.
+6️⃣ ارجع إلى QMRMed واضغط «🎟️ إدخال كود التفعيل» وأدخل الكود كما استلمته.
+
+🔐 لا ترسل كلمة مرور أو رمز دخول أو بيانات حساسة. لا تعتبر عملية الدفع مكتملة حتى يؤكد لك الدعم استلامها والتحقق منها.`, new InlineKeyboard().text('🎟️ إدخال كود التفعيل', 'redeem_code').row().text('🆘 التواصل مع الدعم', 'manual:support').row().text('⬅️ طرق الدفع', 'payment_methods').row().text('🏠 الرئيسية', 'home'));
+});
+
+bot.callbackQuery('manual:support', async ctx => {
+  await ctx.answerCallbackQuery();
+  return ctx.reply(`🆘 دعم وتفعيل QMRMed
+
+لإتمام التفعيل الخارجي تواصل مع ${config.SUPPORT_HANDLE || '@ID29i'}.
+
+أرسل:
+• صورة الإيصال
+• الخطة والمدة التي اخترتها
+• Telegram ID الخاص بك
+
+بعد التحقق من العملية سيصلك كود التفعيل.`, { reply_markup: new InlineKeyboard().text('🎟️ إدخال كود التفعيل', 'redeem_code').row().text('🏠 الرئيسية', 'home') });
+});
+
+bot.callbackQuery('redeem_code', async ctx => {
+  await ctx.answerCallbackQuery();
+  pending.set(userKey(ctx), 'activation_code');
+  return ctx.reply('🎟️ تفعيل الاشتراك\n\nأرسل كود التفعيل الذي استلمته من دعم QMRMed.\n\nسيتم التحقق تلقائيًا من صحة الكود، حالته، عدد مرات استخدامه، مدة الاشتراك وصلاحيته، ثم تفعيل الخطة على حسابك إذا كان كل شيء صحيحًا.', { reply_markup: cancelMenu });
+});
+
+'''
+              if anchor not in s:
+                  raise SystemExit('callback anchor not found')
+              s = s.replace(anchor, block + anchor, 1)
+
+          # Ensure text handler has a strict activation-code path.
+          marker = "const action = pending.get(userKey(ctx));"
+          if marker in s and "action === 'activation_code'" not in s:
+              # Insert before generic action handling; exact existing marker is intentionally guarded.
+              s = s.replace(marker, "const action = pending.get(userKey(ctx));\n  if (action === 'activation_code' && ctx.message?.text) {\n    pending.delete(userKey(ctx));\n    try {\n      const result = await redeemActivationCode((await getUser(ctx)).id, ctx.message.text);\n      return ctx.reply(`🎉 تم تفعيل الاشتراك بنجاح!\\n\\n💎 الخطة: ${result.plan}\\n📅 المدة: ${result.durationDays === 30 ? 'شهر واحد' : result.durationDays === 150 ? '5 أشهر' : result.durationDays === 365 ? 'سنة واحدة' : `${result.durationDays} يومًا`}\\n\\nيمكنك الآن استخدام الأقسام المدفوعة حسب خطتك.`, { reply_markup: mainMenu });\n    } catch (error) {\n      return ctx.reply(`❌ تعذر تفعيل الكود.\\n\\n${error instanceof Error ? error.message : 'الكود غير صالح أو غير متاح.'}\\n\\nإذا كنت تعتقد أن هناك خطأ، تواصل مع ${config.SUPPORT_HANDLE || '@ID29i'}.`, { reply_markup: plansMenu() });\n    }\n  }")
+
+          idx.write_text(s)
+      - name: Typecheck and test
+        run: |
+          npm ci
+          npx prisma generate
+          npm run typecheck
+          npm test -- --runInBand
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/index.ts src/menu.ts src/activation.ts
+          git diff --cached --quiet || git commit -m 'feat(payments): complete external activation flow'
+          git push origin HEAD:feat/qmrmed-final-completion
+      - name: Remove temporary workflow
+        if: always()
+        shell: bash
+        run: |
+          git rm -f .github/workflows/complete-manual-activation.yml 2>/dev/null || true
+          git diff --cached --quiet || git commit -m 'chore(ci): remove temporary activation patch workflow'
+          git push origin HEAD:feat/qmrmed-final-completion || true
