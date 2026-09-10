@@ -1,8 +1,8 @@
 name: Complete admin code management
 on:
   push:
-    paths:
-      - '.github/workflows/complete-admin-codes.yml'
+    branches:
+      - feat/qmrmed-final-completion
 jobs:
   patch:
     runs-on: ubuntu-latest
