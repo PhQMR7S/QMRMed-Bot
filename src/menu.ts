@@ -48,8 +48,12 @@ export function studyStageMenu(department: string) {
 
 export function plansMenu() {
   return new InlineKeyboard()
-    .text('💙 PLUS — Telegram Stars', 'plan:PLUS').row()
-    .text('💜 PRO — Telegram Stars', 'plan:PRO').row()
+    .text('💙 PLUS — شهر | 250⭐', 'plan:PLUS:30').row()
+    .text('💜 PRO — شهر | 500⭐', 'plan:PRO:30').row()
+    .text('🔥 PLUS — 5 أشهر | 500⭐', 'plan:PLUS:150').row()
+    .text('🔥 PRO — 5 أشهر | 1000⭐', 'plan:PRO:150').row()
+    .text('🏆 PLUS — سنة | 1000⭐', 'plan:PLUS:365').row()
+    .text('🏆 PRO — سنة | 2000⭐', 'plan:PRO:365').row()
     .text('💳 طرق الدفع الأخرى', 'payment_methods').row()
     .text('🎟️ تفعيل كود اشتراك', 'redeem_code').row()
     .text('📜 الشروط', 'terms').text('🆘 دعم الدفع', 'paysupport').row()
@@ -69,7 +73,7 @@ export function adminMenu() {
 export function adminCodesMenu() {
   return new InlineKeyboard()
     .text('💙 PLUS — 30 يوم', 'admin:code:create:PLUS:30').text('💜 PRO — 30 يوم', 'admin:code:create:PRO:30').row()
-    .text('💙 PLUS — 90 يوم', 'admin:code:create:PLUS:90').text('💜 PRO — 90 يوم', 'admin:code:create:PRO:90').row()
+    .text('💙 PLUS — 150 يوم', 'admin:code:create:PLUS:150').text('💜 PRO — 150 يوم', 'admin:code:create:PRO:150').row()
     .text('💙 PLUS — 365 يوم', 'admin:code:create:PLUS:365').text('💜 PRO — 365 يوم', 'admin:code:create:PRO:365').row()
     .text('⬅️ لوحة الإدارة', 'admin');
 }
