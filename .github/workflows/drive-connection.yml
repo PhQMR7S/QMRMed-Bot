@@ -2,9 +2,16 @@ name: Google Drive Connection Check
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feature/admin-drive-panel
 
 permissions:
   contents: read
+
+concurrency:
+  group: drive-connection-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   drive-check:
@@ -16,6 +23,7 @@ jobs:
       TRIAL_ENABLED: false
       GOOGLE_DRIVE_ROOT_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_ROOT_FOLDER_ID }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -29,5 +37,4 @@ jobs:
         run: npm install
 
       - name: Check Google Drive access
-        run: |
-          npx tsx -e "import { listDriveFiles } from './src/drive.ts'; const id=process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID; if(!id) throw new Error('GOOGLE_DRIVE_ROOT_FOLDER_ID secret is missing'); if(!process.env.GOOGLE_SERVICE_ACCOUNT_JSON) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON secret is missing'); const files=await listDriveFiles(id); console.log('Google Drive connection: OK'); console.log('Files visible under QMRMed:', files.length); console.log('Sample paths:', files.slice(0,10).map(f=>f.path));"
+        run: npx tsx src/check-drive.ts
