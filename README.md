@@ -66,7 +66,15 @@ Supported directly by the current synchronizer:
 - PDF → text extraction with `unpdf` when the PDF contains selectable text
 - TXT / Markdown / CSV / JSON files
 
-Scanned/image-only PDFs still require OCR and are not falsely marked as successfully indexed when no text can be extracted. Binary files outside the supported formats are skipped safely. A configurable file-size limit is enforced with `DRIVE_MAX_FILE_MB` (100 MB by default; maximum 100 MB) to protect the sync worker.
+Scanned/image-only PDFs still require OCR and are not falsely marked as successfully indexed when no text can be extracted. Binary files outside the supported formats are skipped safely.
+
+### File size policy
+
+There is **no application-level file-size limit** for QMRMed Drive sources. Large textbooks, reference PDFs and other source files are allowed because the Drive corpus is expected to contain substantial medical references.
+
+The synchronizer downloads a supported file and extracts its text before chunking it. Therefore, very large PDFs can still be constrained by the available memory, processing time, Google Drive/API behavior, or the GitHub Actions runner resources; these are infrastructure/runtime constraints, not an imposed QMRMed file-size ceiling.
+
+For production, large-file processing should run in a sufficiently resourced persistent worker rather than relying on GitHub Actions as the production indexer.
 
 ## AI architecture
 
@@ -128,7 +136,6 @@ GOOGLE_DRIVE_ROOT_FOLDER_ID=your_qmrmed_root_folder_id
 GOOGLE_SERVICE_ACCOUNT_JSON_BASE64=base64_encoded_service_account_json
 DRIVE_AUTO_APPROVE=true
 DRIVE_CHUNK_CHARS=6000
-DRIVE_MAX_FILE_MB=100
 ```
 
 The service account must have read access to the QMRMed root folder. For a Shared Drive, grant the service account the minimum read role needed for the content corpus. Never commit service-account JSON, private keys, `BOT_TOKEN`, or `OMNIROUTE_API_KEY` to GitHub.
