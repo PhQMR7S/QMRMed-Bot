@@ -1,8 +1,9 @@
 import { Bot, Context, InlineKeyboard } from 'grammy';
 import { config } from './config.js';
 import { db, upsertTelegramUser } from './db.js';
-import { answerMedicalQuestion, omniChat } from './ai.js';
+import { answerMedicalQuestion } from './ai.js';
 import { formatRetrievedContext, searchApprovedContent } from './content-search.js';
+import { routedChat, aiRoutingSummary } from './ai-routing.js';
 import { backMenu, mainMenu, subjectMenu, topicMenu, lessonMenu, adminMenu, adminDriveMenu, studyDepartmentMenu, studyStageMenu } from './menu.js';
 import { ensureTrial, hasPremiumAccess, isAdmin } from './access.js';
 import { canUseInButtonQuiz, isAnswerCorrect, isQuizExpired, resolveSelectedValue } from './quiz.js';
@@ -57,13 +58,9 @@ function answerKeyboard(type: 'MCQ' | 'TRUE_FALSE' | 'SHORT_ANSWER', options: un
     keyboard.text('✅ صحيح', `ans:${questionId}:صحيح`).row();
     keyboard.text('❌ خطأ', `ans:${questionId}:خطأ`).row();
   } else if (Array.isArray(options)) {
-    for (let i = 0; i < options.length; i++) {
-      keyboard.text(String(options[i]).slice(0, 60), `ans:${questionId}:${i}`).row();
-    }
+    for (let i = 0; i < options.length; i++) keyboard.text(String(options[i]).slice(0, 60), `ans:${questionId}:${i}`).row();
   } else if (options && typeof options === 'object') {
-    for (const [key, value] of Object.entries(options)) {
-      keyboard.text(`${key}. ${String(value).slice(0, 50)}`, `ans:${questionId}:${key}`).row();
-    }
+    for (const [key, value] of Object.entries(options)) keyboard.text(`${key}. ${String(value).slice(0, 50)}`, `ans:${questionId}:${key}`).row();
   }
   return keyboard.text('🏠 إنهاء', 'quiz:stop');
 }
@@ -283,8 +280,9 @@ async function adminAction(ctx: Context, data: string) {
     return render(ctx, `✅ اكتملت المزامنة\n\n📄 الملفات: ${result.filesSeen}\n🔎 المفهرسة: ${result.filesIndexed}\n⏭️ المتخطاة: ${result.filesSkipped}\n🗑️ المحذوف فهرسها: ${result.filesRemoved}\n🧩 المقاطع: ${result.chunks}`, adminDriveMenu());
   }
   if (data === 'admin:ai') {
-    const result = await omniChat([{ role: 'user', content: 'Reply only: QMRMed OmniRoute OK' }], { temperature: 0 });
-    return render(ctx, `🤖 OmniRoute\n\n${result}`, adminMenu());
+    const summary = aiRoutingSummary();
+    const result = await routedChat('admin', 'PRO', [{ role: 'user', content: 'Reply only: QMRMed OmniRoute OK' }], 0);
+    return render(ctx, `🤖 OmniRoute\n\n${result}\n\n🔗 ${summary.url}\n⚙️ default=${summary.defaultModel}`, adminMenu());
   }
   if (data === 'admin:broadcast') {
     pending.set(userKey(ctx), 'broadcast');
@@ -321,7 +319,7 @@ bot.on('message:text', async ctx => {
   const key = userKey(ctx);
   const text = ctx.message.text.trim();
   if (text.startsWith('/')) return;
-  await getUser(ctx);
+  const user = await getUser(ctx);
   const action = pending.get(key);
   if (!action) return ctx.reply('استخدم /start لفتح لوحة QMRMed.', { reply_markup: mainMenu });
   pending.delete(key);
@@ -331,20 +329,16 @@ bot.on('message:text', async ctx => {
     const users = await db.user.findMany({ select: { telegramId: true } });
     let sent = 0;
     for (const target of users) {
-      try {
-        await ctx.api.sendMessage(target.telegramId, `📣 QMRMed\n\n${text}`);
-        sent++;
-      } catch (error) {
-        console.warn('Broadcast delivery failed:', target.telegramId, error);
-      }
+      try { await ctx.api.sendMessage(target.telegramId, `📣 QMRMed\n\n${text}`); sent++; }
+      catch (error) { console.warn('Broadcast delivery failed:', target.telegramId, error); }
     }
     return ctx.reply(`✅ اكتمل الإرسال. نجح: ${sent}/${users.length}`);
   }
 
   if (action === 'search') {
     try {
-      const results = await searchApprovedContent(text, { take: 10 });
-      if (!results.length) return ctx.reply('لم أجد نتيجة مطابقة داخل محتوى QMRMed المعتمد.');
+      const results = await searchApprovedContent(text, { take: 10, department: user.department ?? undefined, stage: user.stage ?? undefined });
+      if (!results.length) return ctx.reply('لم أجد نتيجة مطابقة داخل محتوى QMRMed المعتمد ضمن إعدادات الدراسة الحالية.');
       return replyLong(ctx, `🔎 نتائج البحث داخل QMRMed المعتمد:\n\n${formatRetrievedContext(results, 10_000)}`);
     } catch (error) {
       console.error('Search failed:', error);
@@ -353,7 +347,7 @@ bot.on('message:text', async ctx => {
   }
 
   try {
-    const response = await answerMedicalQuestion(text);
+    const response = await answerMedicalQuestion(text, { department: user.department ?? undefined, stage: user.stage ?? undefined });
     return replyLong(ctx, `🤖 QMRMed AI\n\n${response}`);
   } catch (error) {
     console.error('AI failed:', error);
