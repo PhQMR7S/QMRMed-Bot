@@ -39,7 +39,6 @@ export async function sendStarsInvoice(ctx: Context, plan: PaidPlan) {
     `QMRMed ${paymentPlanLabel(plan)}`,
     `اشتراك ${paymentPlanLabel(plan)} لمدة ${planDays(plan)} يومًا`,
     payload,
-    '',
     'XTR',
     [{ label: `QMRMed ${paymentPlanLabel(plan)}`, amount: price }],
   );
