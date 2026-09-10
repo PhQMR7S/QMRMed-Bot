@@ -2,6 +2,7 @@ import { Bot, Context, InlineKeyboard } from 'grammy';
 import { config } from './config.js';
 import { db, upsertTelegramUser } from './db.js';
 import { answerMedicalQuestion, omniChat } from './ai.js';
+import { formatRetrievedContext, searchApprovedContent } from './content-search.js';
 import { backMenu, mainMenu, subjectMenu, topicMenu, lessonMenu, adminMenu } from './menu.js';
 import { ensureTrial, hasPremiumAccess, isAdmin } from './access.js';
 import { canUseInButtonQuiz, isAnswerCorrect, isQuizExpired, resolveSelectedValue } from './quiz.js';
@@ -250,49 +251,22 @@ bot.callbackQuery('progress', async (ctx) => {
     db.attempt.count({ where: { userId: user.id, correct: true } }),
   ]);
   const accuracy = attempts ? Math.round((correct / attempts) * 100) : 0;
-  await ctx.editMessageText(`📊 تقدمي ونتائجي\n\n📖 الدروس المكتملة: ${completed}\n❓ المحاولات: ${attempts}\n✅ الصحيحة: ${correct}\n🎯 الدقة: ${accuracy}%`, { reply_markup: backMenu });
+  await ctx.editMessageText(`📊 تقدمي\n\nالدروس المكتملة: ${completed}\nالمحاولات: ${attempts}\nالإجابات الصحيحة: ${correct}\nالدقة: ${accuracy}%`, { reply_markup: backMenu });
 });
 
 bot.callbackQuery('study_mode', async (ctx) => {
   await ctx.answerCallbackQuery();
-  const user = await getUser(ctx);
-  const keyboard = new InlineKeyboard()
-    .text('1️⃣ المرحلة الأولى', 'stage:1').text('2️⃣ الثانية', 'stage:2').row()
-    .text('3️⃣ الثالثة', 'stage:3').text('4️⃣ الرابعة', 'stage:4').row()
-    .text('5️⃣ الخامسة', 'stage:5').text('6️⃣ السادسة', 'stage:6').row()
-    .text('🏥 طب عام', 'dept:medicine').text('💊 صيدلة', 'dept:pharmacy').row()
-    .text('🦷 طب أسنان', 'dept:dentistry').text('⬅️ الرئيسية', 'home');
-  await ctx.editMessageText(`🎯 إعداد الدراسة\n\nالمرحلة الحالية: ${user.stage ?? 'غير محددة'}\nالقسم: ${user.department ?? 'غير محدد'}\n\nاختر ما تريد تغييره:`, { reply_markup: keyboard });
+  await ctx.editMessageText('🎯 وضع الدراسة\n\nاختر القسم والمرحلة من المواد الدراسية. سيتم توسيع التخصيص حسب تفضيلات المستخدم في الإصدار القادم.', { reply_markup: backMenu });
 });
-bot.callbackQuery(/^stage:(\d+)$/, async (ctx) => {
-  await ctx.answerCallbackQuery('تم الحفظ');
-  const user = await getUser(ctx);
-  await db.user.update({ where: { id: user.id }, data: { stage: ctx.match[1] } });
-  await ctx.editMessageText('✅ تم حفظ المرحلة.', { reply_markup: backMenu });
-});
-bot.callbackQuery(/^dept:(.+)$/, async (ctx) => {
-  await ctx.answerCallbackQuery('تم الحفظ');
-  const user = await getUser(ctx);
-  const names: Record<string, string> = { medicine: 'طب عام', pharmacy: 'صيدلة', dentistry: 'طب أسنان' };
-  await db.user.update({ where: { id: user.id }, data: { department: names[ctx.match[1]] ?? ctx.match[1] } });
-  await ctx.editMessageText(`✅ تم حفظ القسم: ${names[ctx.match[1]] ?? ctx.match[1]}`, { reply_markup: backMenu });
-});
-
 bot.callbackQuery('search', async (ctx) => {
   await ctx.answerCallbackQuery();
   pending.set(userKey(ctx), 'search');
-  await ctx.editMessageText('🔎 أرسل كلمة أو موضوعًا. سأبحث داخل محتوى QMRMed المخزن فقط.', { reply_markup: backMenu });
+  await ctx.editMessageText('🔎 أرسل كلمة أو عبارة للبحث داخل محتوى QMRMed المعتمد فقط.', { reply_markup: new InlineKeyboard().text('❌ إلغاء', 'home') });
 });
 bot.callbackQuery('ai', async (ctx) => {
   await ctx.answerCallbackQuery();
   pending.set(userKey(ctx), 'ai');
-  await ctx.editMessageText('🤖 أرسل سؤالك الطبي أو الدراسي. سيُعالج عبر OmniRoute، مع تزويده بسياق QMRMed المتاح فقط.', { reply_markup: backMenu });
-});
-
-bot.callbackQuery('account', async (ctx) => {
-  await ctx.answerCallbackQuery();
-  const user = await getUser(ctx);
-  await ctx.editMessageText(`👤 حسابي\n\nالاسم: ${user.firstName ?? '-'}\nالمستخدم: @${user.username ?? '-'}\nالخطة: ${user.plan}\nالمرحلة: ${user.stage ?? '-'}\nالقسم: ${user.department ?? '-'}\nالتجربة: ${user.trialEndsAt && user.trialEndsAt > new Date() ? `حتى ${user.trialEndsAt.toLocaleDateString('ar-IQ')}` : 'غير مفعلة'}`, { reply_markup: backMenu });
+  await ctx.editMessageText('🤖 أرسل سؤالك الطبي. سأبحث أولًا في محتوى QMRMed المعتمد ثم أجيب منه فقط.', { reply_markup: new InlineKeyboard().text('❌ إلغاء', 'home') });
 });
 bot.callbackQuery('trial', async (ctx) => {
   await ctx.answerCallbackQuery();
@@ -390,51 +364,19 @@ bot.on('message:text', async (ctx) => {
   }
 
   if (action === 'search') {
-    const terms = text.toLocaleLowerCase().split(/\s+/).filter((term) => term.length >= 2).slice(0, 8);
-    if (!terms.length) return ctx.reply('أرسل كلمة بحث من حرفين على الأقل.');
-
-    const subjects = await db.subject.findMany({
-      where: { OR: terms.map((term) => ({ name: { contains: term } })) },
-      orderBy: { order: 'asc' },
-      take: 10,
-    });
-    const lessons = await db.lesson.findMany({
-      where: {
-        OR: terms.map((term) => ({ OR: [{ title: { contains: term } }, { content: { contains: term } }] })),
-      },
-      include: { topic: { include: { subject: true } } },
-      take: 10,
-    });
-    const lines = [
-      ...subjects.map((s) => `📚 ${s.name}`),
-      ...lessons.map((l) => `📖 ${l.title} — ${l.topic.subject.name}`),
-    ];
-    return replyLong(ctx, lines.length ? `🔎 نتائج البحث داخل QMRMed:\n\n${lines.join('\n')}` : 'لم أجد نتيجة مطابقة داخل محتوى QMRMed.');
+    try {
+      const results = await searchApprovedContent(text, { take: 10 });
+      if (!results.length) return ctx.reply('لم أجد نتيجة مطابقة داخل محتوى QMRMed المعتمد.');
+      const context = formatRetrievedContext(results, 10_000);
+      return replyLong(ctx, `🔎 نتائج البحث داخل QMRMed المعتمد:\n\n${context}`);
+    } catch (error) {
+      console.error(error);
+      return ctx.reply('⚠️ تعذر البحث في محتوى QMRMed حاليًا. تأكد من تشغيل مزامنة Google Drive وقاعدة البيانات ثم حاول مرة أخرى.');
+    }
   }
 
   try {
-    const terms = text.toLocaleLowerCase().split(/\s+/).filter((term) => term.length >= 2).slice(0, 8);
-    const contextLessons = terms.length
-      ? await db.lesson.findMany({
-          where: {
-            OR: terms.flatMap((term) => [
-              { title: { contains: term } },
-              { content: { contains: term } },
-            ]),
-          },
-          take: 8,
-          select: { title: true, content: true, source: true },
-        })
-      : [];
-
-    let context = '';
-    for (const lesson of contextLessons) {
-      const block = `${lesson.title}\n${lesson.content}\nالمصدر: ${lesson.source ?? 'QMRMed'}`;
-      if (context.length + block.length + 2 > MAX_AI_CONTEXT_CHARS) break;
-      context += `${context ? '\n\n' : ''}${block}`;
-    }
-
-    const response = await answerMedicalQuestion(text, context);
+    const response = await answerMedicalQuestion(text, '');
     return replyLong(ctx, `🤖 QMRMed AI\n\n${response}`);
   } catch (error) {
     console.error(error);
