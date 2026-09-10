@@ -29,11 +29,19 @@ export async function omniChat(messages: AIMessage[], options?: { model?: string
   }
 }
 
-export async function answerMedicalQuestion(question: string, _untrustedContext = '') {
-  const driveItems = await searchApprovedContent(question, { take: 12 });
+export async function answerMedicalQuestion(
+  question: string,
+  options?: { department?: string; stage?: string; subjectName?: string },
+) {
+  const driveItems = await searchApprovedContent(question, {
+    take: 12,
+    department: options?.department,
+    stage: options?.stage,
+    subjectName: options?.subjectName,
+  });
   const trustedContext = formatRetrievedContext(driveItems, 12_000);
   if (!trustedContext) {
-    return 'لم أجد محتوى معتمدًا من QMRMed مرتبطًا بسؤالك. جرّب كلمات أكثر تحديدًا، ولن أقدّم إجابة من خارج المصادر المعتمدة.';
+    return 'لم أجد محتوى معتمدًا من QMRMed مرتبطًا بسؤالك ضمن إعدادات الدراسة الحالية. جرّب كلمات أكثر تحديدًا أو غيّر القسم/المرحلة.';
   }
 
   return omniChat([
