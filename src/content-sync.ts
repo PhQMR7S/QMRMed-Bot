@@ -14,7 +14,8 @@ const DEPARTMENTS: Record<string, string> = {
 
 const KIND_FOLDER_NAMES = new Set([
   'sources', 'source', 'ministerial', 'ministerials', 'question bank', 'questions',
-  'references', 'reference', 'مصادر', 'المصادر', 'وزاريات', 'وزاري', 'بنك الأسئلة', 'الأسئلة', 'مراجع', 'مرجع',
+  'references', 'reference', 'shared references',
+  'مصادر', 'المصادر', 'وزاريات', 'وزاري', 'بنك الأسئلة', 'الأسئلة', 'مراجع', 'مرجع',
 ]);
 
 const EXCLUDED_PATH_SEGMENTS = new Set([
@@ -30,20 +31,35 @@ const EXCLUDED_PATH_SEGMENTS = new Set([
   '03 - needs review',
 ]);
 
+function normalizeFolderName(part: string) {
+  return part.trim().replace(/^\d+\s*-\s*/, '').trim();
+}
+
 function normalizedSegments(path: string) {
-  return path.split('/').filter(Boolean).map((part) => part.trim());
+  return path.split('/').filter(Boolean).map((part) => normalizeFolderName(part));
 }
 
 function shouldIndexPath(path: string) {
-  const segments = normalizedSegments(path).slice(0, -1);
-  return !segments.some((segment) => EXCLUDED_PATH_SEGMENTS.has(segment.toLocaleLowerCase()));
+  const segments = path.split('/').filter(Boolean).slice(0, -1).map((part) => part.trim().toLocaleLowerCase());
+  return !segments.some((segment) => EXCLUDED_PATH_SEGMENTS.has(segment));
+}
+
+function isKindFolder(part: string) {
+  const normalized = normalizeFolderName(part).toLocaleLowerCase();
+  return KIND_FOLDER_NAMES.has(normalized)
+    || normalized.includes('ministerial')
+    || normalized.includes('وزاري')
+    || normalized.includes('وزاريات')
+    || normalized.includes('question bank')
+    || normalized.includes('بنك الأسئلة')
+    || normalized.includes('shared references');
 }
 
 function contentKind(path: string): ContentKind | null {
   const segments = normalizedSegments(path).slice(0, -1).map((part) => part.toLocaleLowerCase());
   if (segments.some((part) => part.includes('ministerial') || part.includes('وزاري') || part.includes('وزاريات'))) return 'MINISTERIAL';
-  if (segments.some((part) => part.includes('question bank') || part === 'questions' || part.includes('بنك الأسئلة') || part === 'الأسئلة')) return 'QUESTION';
-  if (segments.some((part) => part === 'references' || part === 'reference' || part.includes('مرجع') || part.includes('medical references') || part.includes('shared references'))) return 'REFERENCE';
+  if (segments.some((part) => part === 'question bank' || part === 'questions' || part.includes('بنك الأسئلة') || part === 'الأسئلة')) return 'QUESTION';
+  if (segments.some((part) => part === 'references' || part === 'reference' || part.includes('مرجع') || part.includes('shared references'))) return 'REFERENCE';
   if (segments.some((part) => part === 'sources' || part === 'source' || part.includes('مصادر') || part === 'المصادر')) return 'SOURCE';
   return null;
 }
@@ -54,8 +70,11 @@ function metadataFromPath(path: string) {
   const departmentIndex = normalized.findIndex((part) => Object.values(DEPARTMENTS).includes(part));
   const department = departmentIndex >= 0 ? normalized[departmentIndex] : null;
   const stage = normalized.find((part) => /(?:stage|year|مرحلة|سنة)\s*[-_ ]*\d+/i.test(part)) ?? null;
-  const kindIndex = normalized.findIndex((part) => KIND_FOLDER_NAMES.has(part.toLocaleLowerCase()));
-  const subjectName = kindIndex > 0 ? normalized[kindIndex - 1] : null;
+  const kindIndex = parts.findIndex((part) => isKindFolder(part));
+  const kindFolder = kindIndex >= 0 ? normalizeFolderName(parts[kindIndex]).toLocaleLowerCase() : null;
+  const subjectName = kindIndex > 0 && kindFolder !== 'shared references'
+    ? normalized[kindIndex - 1]
+    : null;
   return { department, stage, subjectName };
 }
 
@@ -116,9 +135,14 @@ export async function syncGoogleDrive() {
       }
       currentIds.add(file.id);
 
-      const existing = await db.contentSource.findUnique({ where: { driveFileId: file.id }, select: { id: true, checksum: true, modifiedTime: true, indexed: true } });
+      const existing = await db.contentSource.findUnique({
+        where: { driveFileId: file.id },
+        select: { id: true, checksum: true, modifiedTime: true, indexed: true },
+      });
       const modified = file.modifiedTime ? new Date(file.modifiedTime) : null;
-      const unchanged = existing && existing.indexed && existing.checksum === file.md5Checksum && existing.modifiedTime?.getTime() === modified?.getTime();
+      const unchanged = existing && existing.indexed
+        && existing.checksum === file.md5Checksum
+        && existing.modifiedTime?.getTime() === modified?.getTime();
       if (unchanged) {
         skipped++;
         continue;
@@ -179,13 +203,19 @@ export async function syncGoogleDrive() {
             })),
           });
         }
-        await tx.contentSource.update({ where: { id: source.id }, data: { indexed: parts.length > 0, lastSyncedAt: new Date() } });
+        await tx.contentSource.update({
+          where: { id: source.id },
+          data: { indexed: parts.length > 0, lastSyncedAt: new Date() },
+        });
       });
       indexed++;
       chunks += parts.length;
     }
 
-    const stale = await db.contentSource.findMany({ where: { driveFileId: { notIn: [...currentIds] }, indexed: true }, select: { id: true } });
+    const stale = await db.contentSource.findMany({
+      where: { driveFileId: { notIn: [...currentIds] }, indexed: true },
+      select: { id: true },
+    });
     for (const source of stale) {
       await db.$transaction([
         db.contentChunk.deleteMany({ where: { sourceId: source.id } }),
