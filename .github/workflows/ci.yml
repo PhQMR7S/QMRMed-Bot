@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -38,66 +38,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Apply admin code UI patch once
-        shell: python
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          from pathlib import Path
-          p = Path('src/index.ts')
-          s = p.read_text()
-          changed = False
-          if 'adminCodeListMenu' not in s:
-              s = s.replace("adminCodesMenu, plansMenu, externalPaymentMenu, cancelMenu", "adminCodesMenu, adminCodeListMenu, adminCodeDetailMenu, plansMenu, externalPaymentMenu, cancelMenu")
-              changed = True
-          if 'listActivationCodes, getActivationCode, setActivationCodeActive' not in s:
-              s = s.replace("getAdminDashboard, getDriveStatus, runAdminDriveSync, getContentBreakdown", "getAdminDashboard, getDriveStatus, runAdminDriveSync, getContentBreakdown, listActivationCodes, getActivationCode, setActivationCodeActive")
-              changed = True
-          old = "if (data === 'admin:codes') return render(ctx, '🎟️ إدارة أكواد الاشتراك\\n\\nاختر الخطة والمدة لإنشاء كود جديد. الكود لا يمنح أي صلاحيات أدمن؛ يمنح الاشتراك المحدد فقط.', adminCodesMenu());"
-          if old in s:
-              new = """if (data === 'admin:codes') return render(ctx, '🎟️ إدارة أكواد الاشتراك\\n\\nاختر الخطة والمدة لإنشاء كود جديد، أو اعرض الأكواد الحالية لإدارتها.', adminCodesMenu());
-  if (data === 'admin:codes:list') {
-    const codes = await listActivationCodes(20);
-    if (!codes.length) return render(ctx, '📋 أكواد الاشتراك\\n\\nلا توجد أكواد منشأة حاليًا.', adminCodesMenu());
-    const now = new Date();
-    const lines = codes.map(c => `${c.active && (!c.expiresAt || c.expiresAt > now) && c.usedCount < c.maxUses ? '🟢' : '🔴'} #${c.id} — ${c.code} — ${c.plan} — ${c.durationDays} يوم — ${c.usedCount}/${c.maxUses}${c.expiresAt ? ` — ينتهي ${c.expiresAt.toLocaleDateString('ar-IQ')}` : ''}`);
-    return render(ctx, `📋 أكواد الاشتراك\\n\\n${lines.join('\\n')}`, adminCodeListMenu(codes));
-  }
-  if (data.startsWith('admin:code:view:')) {
-    const id = Number(data.split(':')[3]);
-    if (!Number.isInteger(id) || id <= 0) return render(ctx, '❌ معرف كود غير صالح.', adminCodesMenu());
-    const code = await getActivationCode(id);
-    if (!code) return render(ctx, '❌ الكود غير موجود.', adminCodesMenu());
-    const now = new Date();
-    const expired = !!code.expiresAt && code.expiresAt <= now;
-    const exhausted = code.usedCount >= code.maxUses;
-    const status = code.active && !expired && !exhausted ? '🟢 فعال' : expired ? '⏰ منتهي' : exhausted ? '🔴 مستنفد' : '⛔ معطل';
-    const redemptions = code.redemptions.length ? code.redemptions.map(r => `• ${r.user.username ? '@' + r.user.username : r.user.telegramId} — ${r.redeemedAt.toLocaleString('ar-IQ')}`).join('\\n') : 'لا يوجد استخدام حتى الآن.';
-    return render(ctx, `🎟️ تفاصيل الكود #${code.id}\\n\\n🔐 الكود: ${code.code}\\n💎 الخطة: ${code.plan}\\n📅 المدة: ${code.durationDays} يوم\\n📊 الاستخدام: ${code.usedCount}/${code.maxUses}\\n📌 الحالة: ${status}\\n📆 الإنشاء: ${code.createdAt.toLocaleString('ar-IQ')}\\n⏳ الانتهاء: ${code.expiresAt?.toLocaleString('ar-IQ') ?? 'غير محدد'}\\n👤 المنشئ: ${code.createdByTelegramId}\\n\\n👥 الاستخدامات:\\n${redemptions}`, adminCodeDetailMenu(id, code.active && !expired && !exhausted));
-  }
-  if (data.startsWith('admin:code:toggle:')) {
-    const id = Number(data.split(':')[3]);
-    if (!Number.isInteger(id) || id <= 0) return render(ctx, '❌ معرف كود غير صالح.', adminCodesMenu());
-    const code = await getActivationCode(id);
-    if (!code) return render(ctx, '❌ الكود غير موجود.', adminCodesMenu());
-    const now = new Date();
-    const canEnable = !!code.expiresAt ? code.expiresAt > now && code.usedCount < code.maxUses : code.usedCount < code.maxUses;
-    const nextActive = !code.active;
-    if (nextActive && !canEnable) return render(ctx, '❌ لا يمكن تفعيل هذا الكود لأنه منتهي أو مستنفد.', adminCodeDetailMenu(id, false));
-    await setActivationCodeActive(id, nextActive);
-    const updated = await getActivationCode(id);
-    return render(ctx, `✅ تم ${nextActive ? 'تفعيل' : 'تعطيل'} الكود #${id}.`, adminCodeDetailMenu(id, !!updated?.active));
-  }"""
-              s = s.replace(old, new, 1)
-              changed = True
-          if changed:
-              p.write_text(s)
-              import subprocess
-              subprocess.run(['git','config','user.name','github-actions[bot]'], check=True)
-              subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'], check=True)
-              subprocess.run(['git','add','src/index.ts'], check=True)
-              subprocess.run(['git','commit','-m','feat(admin): complete activation code management UI'], check=True)
-              subprocess.run(['git','push','origin','HEAD:feat/qmrmed-final-completion'], check=True)
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
