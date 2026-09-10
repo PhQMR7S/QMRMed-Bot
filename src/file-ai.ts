@@ -9,6 +9,7 @@ import { extractText, getDocumentProxy } from 'unpdf';
 import { Bot, Context, InlineKeyboard, InputFile } from 'grammy';
 import { config } from './config.js';
 import { routedChat } from './ai-routing.js';
+import { upsertTelegramUser } from './db.js';
 import type { Plan } from '@prisma/client';
 
 const execFileAsync = promisify(execFile);
@@ -16,33 +17,17 @@ const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const ARCHIVE_ROOT = join(process.cwd(), '.qmrmed', 'file-ai');
 const SIGNATURE = 'QMRMed — Medical Education Platform';
 
-type Operation =
-  | 'explain' | 'summary' | 'qa' | 'mcq' | 'true_false' | 'fill_blank' | 'matching'
-  | 'cases' | 'viva' | 'mind_map' | 'flowchart' | 'comparison' | 'timeline'
-  | 'diagnostic' | 'exam';
-
-type ArchiveItem = {
-  id: string;
-  userId: string;
-  sourceName: string;
-  mimeType: string;
-  operation: Operation;
-  createdAt: string;
-  text: string;
-  result: string;
-  pdfPath?: string;
-};
+type Operation = 'explain' | 'summary' | 'qa' | 'mcq' | 'true_false' | 'fill_blank' | 'matching' | 'cases' | 'viva' | 'mind_map' | 'flowchart' | 'comparison' | 'timeline' | 'diagnostic' | 'exam';
+type ArchiveItem = { id: string; userId: string; sourceName: string; mimeType: string; operation: Operation; createdAt: string; text: string; result: string; pdfPath?: string };
 
 const operationLabels: Record<Operation, string> = {
-  explain: 'شرح المحاضرة', summary: 'تلخيص دقيق', qa: 'أسئلة قصيرة', mcq: 'MCQ',
-  true_false: 'صح / خطأ', fill_blank: 'أكمل الفراغ', matching: 'مطابقة', cases: 'حالات سريرية',
-  viva: 'Viva / شفوي', mind_map: 'خريطة ذهنية', flowchart: 'مخطط انسيابي', comparison: 'جدول مقارنة',
-  timeline: 'خط زمني', diagnostic: 'خوارزمية تشخيصية', exam: 'اختبار تجريبي',
+  explain: 'شرح المحاضرة', summary: 'تلخيص دقيق', qa: 'أسئلة قصيرة', mcq: 'MCQ', true_false: 'صح / خطأ', fill_blank: 'أكمل الفراغ', matching: 'مطابقة', cases: 'حالات سريرية', viva: 'Viva / شفوي', mind_map: 'خريطة ذهنية', flowchart: 'مخطط انسيابي', comparison: 'جدول مقارنة', timeline: 'خط زمني', diagnostic: 'خوارزمية تشخيصية', exam: 'اختبار تجريبي',
 };
 
 function userDir(userId: string) { return join(ARCHIVE_ROOT, userId.replace(/[^a-zA-Z0-9_-]/g, '_')); }
 function archivePath(userId: string, id: string) { return join(userDir(userId), `${id}.json`); }
 function safeName(name: string) { return name.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80) || 'qmrmed'; }
+function userId(ctx: Context) { if (!ctx.from) throw new Error('Missing Telegram user'); return String(ctx.from.id); }
 
 function menu() {
   return new InlineKeyboard()
@@ -53,41 +38,22 @@ function menu() {
     .text('Viva', 'fileai:op:viva').text('خريطة ذهنية', 'fileai:op:mind_map').row()
     .text('مخطط انسيابي', 'fileai:op:flowchart').text('مقارنة', 'fileai:op:comparison').row()
     .text('خط زمني', 'fileai:op:timeline').text('خوارزمية تشخيصية', 'fileai:op:diagnostic').row()
-    .text('اختبار تجريبي', 'fileai:op:exam').row()
-    .text('أرشيفي', 'fileai:archive');
+    .text('اختبار تجريبي', 'fileai:op:exam').row().text('أرشيفي', 'fileai:archive');
 }
-
 function resultMenu(id: string) {
-  return new InlineKeyboard()
-    .text('إعادة التوليد', `fileai:redo:${id}`).text('PDF', `fileai:pdf:${id}`).row()
-    .text('مشاركة / إرسال', `fileai:share:${id}`).text('أرشيفي', 'fileai:archive').row()
-    .text('عملية أخرى', `fileai:choose:${id}`).text('الرئيسية', 'home');
+  return new InlineKeyboard().text('إعادة التوليد', `fileai:redo:${id}`).text('PDF', `fileai:pdf:${id}`).row().text('مشاركة / إرسال', `fileai:share:${id}`).text('أرشيفي', 'fileai:archive').row().text('عملية أخرى', `fileai:choose:${id}`).text('الرئيسية', 'home');
 }
-
-async function archive(item: ArchiveItem) {
-  await mkdir(userDir(item.userId), { recursive: true });
-  await writeFile(archivePath(item.userId, item.id), JSON.stringify(item, null, 2), 'utf8');
-}
-
-async function loadArchive(userId: string, id: string) {
-  try { return JSON.parse(await readFile(archivePath(userId, id), 'utf8')) as ArchiveItem; }
-  catch { return null; }
-}
-
-async function listArchive(userId: string) {
-  await mkdir(userDir(userId), { recursive: true });
-  const names = (await readdir(userDir(userId))).filter(x => x.endsWith('.json')).sort().reverse().slice(0, 12);
+async function archive(item: ArchiveItem) { await mkdir(userDir(item.userId), { recursive: true }); await writeFile(archivePath(item.userId, item.id), JSON.stringify(item, null, 2), 'utf8'); }
+async function loadArchive(uid: string, id: string) { try { return JSON.parse(await readFile(archivePath(uid, id), 'utf8')) as ArchiveItem; } catch { return null; } }
+async function listArchive(uid: string) {
+  await mkdir(userDir(uid), { recursive: true });
+  const names = (await readdir(userDir(uid))).filter(x => x.endsWith('.json')).sort().reverse().slice(0, 12);
   const items: ArchiveItem[] = [];
-  for (const name of names) {
-    try { items.push(JSON.parse(await readFile(join(userDir(userId), name), 'utf8')) as ArchiveItem); } catch { /* ignore corrupt item */ }
-  }
+  for (const name of names) { try { items.push(JSON.parse(await readFile(join(userDir(uid), name), 'utf8')) as ArchiveItem); } catch {} }
   return items;
 }
 
 async function extractOffice(buffer: Buffer, ext: string) {
-  const dir = await mkdir(join(tmpdir(), `qmrmed-office-${randomUUID()}`), { recursive: true }).then(() => join(tmpdir(), `qmrmed-office-${randomUUID()}`));
-  // Use a deterministic directory because the first mkdir above intentionally creates no reusable path.
-  // The actual extraction helper receives the source bytes through a temporary file.
   const work = join(tmpdir(), `qmrmed-office-${randomUUID()}`);
   await mkdir(work, { recursive: true });
   const input = join(work, `input.${ext}`);
@@ -95,190 +61,98 @@ async function extractOffice(buffer: Buffer, ext: string) {
   const { stdout } = await execFileAsync('python3', ['scripts/extract-office.py', input], { maxBuffer: 8 * 1024 * 1024 });
   return stdout.trim();
 }
-
 async function extractTextFromBuffer(buffer: Buffer, mimeType: string, fileName: string) {
   const ext = fileName.toLowerCase().split('.').pop() ?? '';
-  if (mimeType === 'application/pdf' || ext === 'pdf') {
-    const pdf = await getDocumentProxy(new Uint8Array(buffer));
-    const result = await extractText(pdf, { mergePages: true });
-    return String(result.text ?? '').trim();
-  }
-  if (['docx', 'pptx'].includes(ext) || mimeType.includes('wordprocessingml') || mimeType.includes('presentationml')) {
-    return extractOffice(buffer, ext === 'pptx' ? 'pptx' : 'docx');
-  }
+  if (mimeType === 'application/pdf' || ext === 'pdf') { const pdf = await getDocumentProxy(new Uint8Array(buffer)); const result = await extractText(pdf, { mergePages: true }); return String(result.text ?? '').trim(); }
+  if (['docx', 'pptx'].includes(ext) || mimeType.includes('wordprocessingml') || mimeType.includes('presentationml')) return extractOffice(buffer, ext === 'pptx' ? 'pptx' : 'docx');
   if (['txt', 'md', 'csv', 'json'].includes(ext) || mimeType.startsWith('text/')) return buffer.toString('utf8').trim();
   if (mimeType.startsWith('image/')) {
-    const work = join(tmpdir(), `qmrmed-ocr-${randomUUID()}`);
-    await mkdir(work, { recursive: true });
-    const input = join(work, safeName(fileName));
-    await writeFile(input, buffer);
-    try {
-      const { stdout } = await execFileAsync('tesseract', [input, 'stdout', '-l', 'ara+eng'], { maxBuffer: 8 * 1024 * 1024 });
-      return stdout.trim();
-    } catch {
-      throw new Error('تعذر استخراج النص من الصورة. ثبّت Tesseract مع حزم العربية والإنجليزية على الخادم.');
-    }
+    const work = join(tmpdir(), `qmrmed-ocr-${randomUUID()}`); await mkdir(work, { recursive: true }); const input = join(work, safeName(fileName)); await writeFile(input, buffer);
+    try { const { stdout } = await execFileAsync('tesseract', [input, 'stdout', '-l', 'ara+eng'], { maxBuffer: 8 * 1024 * 1024 }); return stdout.trim(); }
+    catch { throw new Error('تعذر استخراج النص من الصورة. ثبّت Tesseract مع حزم العربية والإنجليزية على الخادم.'); }
   }
   throw new Error('نوع الملف غير مدعوم حاليًا. استخدم PDF أو PowerPoint أو Word أو TXT/Markdown/CSV/JSON أو صورة.');
 }
 
 function promptFor(operation: Operation, sourceName: string, text: string) {
-  const common = [
-    `أنت QMRMed Lecture Intelligence. عالج ملف المحاضرة "${sourceName}".`,
-    'اعتمد حصريًا على النص المستخرج من الملف. لا تضف حقائق خارجية غير مدعومة.',
-    'إذا كانت المعلومة غير موجودة أو غير واضحة في الملف، صرّح بذلك بدل التخمين.',
-    'حافظ على المصطلحات الطبية بدقة، ويمكن إبقاء المصطلح الإنجليزي بين قوسين عند الحاجة.',
-    'أخرج محتوى منظمًا وواضحًا للطلاب، بدون مقدمات أو حشو.',
-    `في النهاية أضف سطرًا مستقلًا: ${SIGNATURE}`,
-    `النص المستخرج:\n${text.slice(0, 120_000)}`,
-  ];
+  const common = `أنت QMRMed Lecture Intelligence. عالج ملف المحاضرة "${sourceName}".\nاعتمد حصريًا على النص المستخرج من الملف. لا تضف حقائق خارجية غير مدعومة.\nإذا كانت المعلومة غير موجودة أو غير واضحة، صرّح بذلك بدل التخمين.\nحافظ على المصطلحات الطبية بدقة.\nأخرج محتوى منظمًا وواضحًا للطلاب.\nفي النهاية أضف: ${SIGNATURE}`;
   const task: Record<Operation, string> = {
-    explain: 'اشرح المحاضرة شرحًا أكاديميًا واضحًا، مرتبًا حسب المفاهيم والعناوين، مع إبراز النقاط المهمة للامتحان.',
-    summary: 'أنشئ ملخصًا دقيقًا وعالي العائد، مرتبًا بعناوين ونقاط، مع الحفاظ على التفاصيل الطبية المهمة.',
-    qa: 'أنشئ أسئلة وأجوبة قصيرة تغطي أهم المعلومات، مع الإجابة الصحيحة بعد كل سؤال.',
-    mcq: 'أنشئ 20 سؤال MCQ من الملف فقط، بأربع خيارات لكل سؤال، وحدد الإجابة الصحيحة واشرحها باختصار.',
+    explain: 'اشرح المحاضرة شرحًا أكاديميًا واضحًا مرتبًا حسب المفاهيم والعناوين مع إبراز نقاط الامتحان.',
+    summary: 'أنشئ ملخصًا دقيقًا وعالي العائد مرتبًا بعناوين ونقاط مع الحفاظ على التفاصيل الطبية المهمة.',
+    qa: 'أنشئ أسئلة وأجوبة قصيرة تغطي أهم المعلومات مع الإجابة الصحيحة بعد كل سؤال.',
+    mcq: 'أنشئ 20 سؤال MCQ من الملف فقط، أربعة خيارات لكل سؤال، مع الإجابة الصحيحة وشرح مختصر.',
     true_false: 'أنشئ 20 سؤال صح/خطأ من الملف فقط، مع الإجابة والتفسير المختصر.',
     fill_blank: 'أنشئ 20 سؤال أكمل الفراغ من الملف فقط، مع الإجابة الصحيحة.',
     matching: 'أنشئ أسئلة مطابقة تربط المصطلحات بالمفاهيم أو التعريفات الموجودة في الملف، مع مفتاح الإجابة.',
-    cases: 'أنشئ 8 حالات سريرية مبنية فقط على معلومات الملف، ولكل حالة: المعطيات، السؤال، الإجابة الصحيحة، والتفسير.',
+    cases: 'أنشئ 8 حالات سريرية مبنية فقط على معلومات الملف، ولكل حالة المعطيات والسؤال والإجابة والتفسير.',
     viva: 'أنشئ أسئلة Viva/شفوي عالية العائد مع إجابات نموذجية قصيرة من الملف فقط.',
     mind_map: 'حوّل المحاضرة إلى خريطة ذهنية هرمية واضحة باستخدام عناوين متداخلة وعلاقات سبب/نتيجة عند وجودها.',
     flowchart: 'حوّل العمليات أو التسلسلات المهمة إلى مخططات انسيابية نصية باستخدام الأسهم والخطوات.',
     comparison: 'استخرج أهم المقارنات من المحاضرة وضعها في جداول نصية واضحة.',
-    timeline: 'استخرج أي تسلسل زمني أو مراحل أو تطور وارد في الملف وقدمه كخط زمني واضح. إذا لم يوجد، اذكر ذلك.',
+    timeline: 'استخرج أي تسلسل زمني أو مراحل أو تطور وارد في الملف وقدمه كخط زمني واضح. إذا لم يوجد اذكر ذلك.',
     diagnostic: 'حوّل المعلومات التشخيصية الواردة في الملف إلى خوارزمية تشخيصية خطوة بخطوة دون إضافة معلومات خارج الملف.',
     exam: 'أنشئ اختبارًا تجريبيًا من 30 سؤالًا متنوعًا من محتوى الملف فقط، مع مفتاح إجابة وشرح مختصر.',
   };
-  return `${common.slice(0, 6).join('\n')}\n\nالمطلوب:\n${task[operation]}\n\n${common[6]}`;
+  return `${common}\n\nالمطلوب:\n${task[operation]}\n\nالنص المستخرج:\n${text.slice(0, 120_000)}`;
 }
-
-async function generate(operation: Operation, plan: Plan, sourceName: string, text: string) {
-  return routedChat('study', plan, [
-    { role: 'system', content: 'QMRMed Lecture Intelligence: grounded file transformation only.' },
-    { role: 'user', content: promptFor(operation, sourceName, text) },
-  ], 0.2);
-}
+async function generate(operation: Operation, plan: Plan, sourceName: string, text: string) { return routedChat('study', plan, [{ role: 'system', content: 'QMRMed Lecture Intelligence: grounded file transformation only.' }, { role: 'user', content: promptFor(operation, sourceName, text) }], 0.2); }
 
 async function createPdf(item: ArchiveItem) {
-  const work = join(tmpdir(), `qmrmed-pdf-${randomUUID()}`);
-  await mkdir(work, { recursive: true });
-  const input = join(work, 'input.json');
-  const output = join(work, `${safeName(item.sourceName)}-${item.operation}.pdf`);
+  const work = join(tmpdir(), `qmrmed-pdf-${randomUUID()}`); await mkdir(work, { recursive: true });
+  const input = join(work, 'input.json'); const output = join(work, `${safeName(item.sourceName)}-${item.operation}.pdf`);
   await writeFile(input, JSON.stringify({ title: `${operationLabels[item.operation]} — ${item.sourceName}`, text: item.result, signature: SIGNATURE, output }), 'utf8');
-  try {
-    await execFileAsync('python3', ['scripts/render-pdf.py', input], { maxBuffer: 2 * 1024 * 1024 });
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`تعذر إنشاء PDF. ثبّت ReportLab وrlbidi على Ubuntu ثم أعد المحاولة. ${detail.slice(0, 300)}`);
-  }
-  item.pdfPath = output;
-  await archive(item);
-  return output;
+  try { await execFileAsync('python3', ['scripts/render-pdf.py', input], { maxBuffer: 2 * 1024 * 1024 }); }
+  catch (error) { const detail = error instanceof Error ? error.message : String(error); throw new Error(`تعذر إنشاء PDF. ثبّت ReportLab وrlbidi على Ubuntu ثم أعد المحاولة. ${detail.slice(0, 300)}`); }
+  item.pdfPath = output; await archive(item); return output;
 }
-
-async function sendPdf(ctx: Context, item: ArchiveItem) {
-  const path = item.pdfPath;
-  if (!path || !existsSync(path)) await createPdf(item);
-  return ctx.replyWithDocument(new InputFile(path!, `${safeName(item.sourceName)}-${item.operation}.pdf`));
-}
-
-async function processOperation(ctx: Context, item: ArchiveItem, plan: Plan) {
-  await ctx.reply(`جاري ${operationLabels[item.operation]} من محتوى الملف فقط…`);
-  item.result = await generate(item.operation, plan, item.sourceName, item.text);
-  item.createdAt = new Date().toISOString();
-  await archive(item);
-  await replyLong(ctx, `تم إنشاء ${operationLabels[item.operation]} من الملف.\n\n${item.result.slice(0, 18_000)}`, resultMenu(item.id));
-  try { await sendPdf(ctx, item); } catch (error) { await ctx.reply(error instanceof Error ? error.message : String(error)); }
-}
-
-async function replyLong(ctx: Context, text: string, markup?: InlineKeyboard) {
-  const limit = 3900;
-  let rest = text;
-  while (rest.length > limit) {
-    let cut = Math.max(rest.lastIndexOf('\n', limit), rest.lastIndexOf(' ', limit));
-    if (cut < 2000) cut = limit;
-    await ctx.reply(rest.slice(0, cut));
-    rest = rest.slice(cut).trimStart();
-  }
-  await ctx.reply(rest || '—', markup ? { reply_markup: markup } : undefined);
-}
+async function sendPdf(ctx: Context, item: ArchiveItem) { if (!item.pdfPath || !existsSync(item.pdfPath)) await createPdf(item); return ctx.replyWithDocument(new InputFile(item.pdfPath!, `${safeName(item.sourceName)}-${item.operation}.pdf`)); }
+async function replyLong(ctx: Context, value: string, markup?: InlineKeyboard) { const limit = 3900; let rest = value; while (rest.length > limit) { let cut = Math.max(rest.lastIndexOf('\n', limit), rest.lastIndexOf(' ', limit)); if (cut < 2000) cut = limit; await ctx.reply(rest.slice(0, cut)); rest = rest.slice(cut).trimStart(); } await ctx.reply(rest || '—', markup ? { reply_markup: markup } : undefined); }
+async function processOperation(ctx: Context, item: ArchiveItem, plan: Plan) { await ctx.reply(`جاري ${operationLabels[item.operation]} من محتوى الملف فقط…`); item.result = await generate(item.operation, plan, item.sourceName, item.text); item.createdAt = new Date().toISOString(); await archive(item); await replyLong(ctx, `تم إنشاء ${operationLabels[item.operation]} من الملف.\n\n${item.result.slice(0, 18_000)}`, resultMenu(item.id)); try { await sendPdf(ctx, item); } catch (error) { await ctx.reply(error instanceof Error ? error.message : String(error)); } }
 
 export function registerFileAiHandlers(bot: Bot) {
   bot.on('message:document', async ctx => {
-    const doc = ctx.message.document;
+    const doc = ctx.message.document; const sourceName = doc.file_name ?? 'qmrmed-file';
     if (!doc.file_size || doc.file_size > MAX_FILE_BYTES) return ctx.reply('الملف أكبر من حد Telegram للتنزيل عبر Bot API (20 MB).');
     try {
-      const file = await ctx.getFile();
-      if (!file.file_path) throw new Error('تعذر الحصول على مسار الملف من Telegram.');
-      const response = await fetch(`https://api.telegram.org/file/bot${config.BOT_TOKEN}/${file.file_path}`);
-      if (!response.ok) throw new Error(`فشل تنزيل الملف من Telegram: ${response.status}`);
-      const buffer = Buffer.from(await response.arrayBuffer());
-      const text = await extractTextFromBuffer(buffer, doc.mime_type ?? '', doc.file_name);
-      if (text.length < 40) throw new Error('لم أستطع استخراج نص قابل للمعالجة من الملف. قد يكون PDF ممسوحًا ضوئيًا ويحتاج OCR.');
-      const id = randomUUID();
-      const item: ArchiveItem = { id, userId: String(ctx.from.id), sourceName: doc.file_name, mimeType: doc.mime_type ?? 'application/octet-stream', operation: 'summary', createdAt: new Date().toISOString(), text, result: '' };
-      await archive(item);
-      await ctx.reply(`تم استلام الملف: ${doc.file_name}\n\nاختر ما تريد إنشاءه من محتوى الملف.\n\nكل نتيجة تعتمد على الملف نفسه فقط، ويمكن حفظها وإرسالها كـ PDF.`, { reply_markup: menu() });
-    } catch (error) {
-      await ctx.reply(error instanceof Error ? error.message : String(error));
-    }
+      const file = await ctx.getFile(); if (!file.file_path) throw new Error('تعذر الحصول على مسار الملف من Telegram.');
+      const response = await fetch(`https://api.telegram.org/file/bot${config.BOT_TOKEN}/${file.file_path}`); if (!response.ok) throw new Error(`فشل تنزيل الملف من Telegram: ${response.status}`);
+      const text = await extractTextFromBuffer(Buffer.from(await response.arrayBuffer()), doc.mime_type ?? '', sourceName); if (text.length < 40) throw new Error('لم أستطع استخراج نص قابل للمعالجة من الملف. قد يكون PDF ممسوحًا ضوئيًا ويحتاج OCR.');
+      const item: ArchiveItem = { id: randomUUID(), userId: userId(ctx), sourceName, mimeType: doc.mime_type ?? 'application/octet-stream', operation: 'summary', createdAt: new Date().toISOString(), text, result: '' };
+      await archive(item); await ctx.reply(`تم استلام الملف: ${sourceName}\n\nاختر ما تريد إنشاءه من محتوى الملف.\n\nكل نتيجة تعتمد على الملف نفسه فقط، ويمكن حفظها وإرسالها كـ PDF.`, { reply_markup: menu() });
+    } catch (error) { await ctx.reply(error instanceof Error ? error.message : String(error)); }
   });
 
   bot.on('message:photo', async ctx => {
-    const photo = ctx.message.photo.at(-1)!;
+    const photo = ctx.message.photo.at(-1); if (!photo) return;
     try {
-      const file = await ctx.api.getFile(photo.file_id);
-      if (!file.file_path) throw new Error('تعذر الحصول على مسار الصورة.');
-      const response = await fetch(`https://api.telegram.org/file/bot${config.BOT_TOKEN}/${file.file_path}`);
-      const buffer = Buffer.from(await response.arrayBuffer());
-      const text = await extractTextFromBuffer(buffer, 'image/jpeg', `lecture-${Date.now()}.jpg`);
-      if (text.length < 40) throw new Error('لم أستطع استخراج نص من الصورة. تأكد من وضوحها.');
-      const id = randomUUID();
-      const item: ArchiveItem = { id, userId: String(ctx.from.id), sourceName: `lecture-${Date.now()}.jpg`, mimeType: 'image/jpeg', operation: 'summary', createdAt: new Date().toISOString(), text, result: '' };
-      await archive(item);
-      await ctx.reply('تمت قراءة الصورة. اختر العملية المطلوبة:', { reply_markup: menu() });
+      const file = await ctx.api.getFile(photo.file_id); if (!file.file_path) throw new Error('تعذر الحصول على مسار الصورة.');
+      const response = await fetch(`https://api.telegram.org/file/bot${config.BOT_TOKEN}/${file.file_path}`); if (!response.ok) throw new Error(`فشل تنزيل الصورة: ${response.status}`);
+      const sourceName = `lecture-${Date.now()}.jpg`; const text = await extractTextFromBuffer(Buffer.from(await response.arrayBuffer()), 'image/jpeg', sourceName); if (text.length < 40) throw new Error('لم أستطع استخراج نص من الصورة. تأكد من وضوحها.');
+      const item: ArchiveItem = { id: randomUUID(), userId: userId(ctx), sourceName, mimeType: 'image/jpeg', operation: 'summary', createdAt: new Date().toISOString(), text, result: '' };
+      await archive(item); await ctx.reply('تمت قراءة الصورة. اختر العملية المطلوبة:', { reply_markup: menu() });
     } catch (error) { await ctx.reply(error instanceof Error ? error.message : String(error)); }
   });
 
   bot.callbackQuery(/^fileai:op:(.+)$/, async ctx => {
-    await ctx.answerCallbackQuery();
-    const operation = ctx.match[1] as Operation;
-    const items = await listArchive(String(ctx.from.id));
-    const item = items.find(x => !x.result);
+    await ctx.answerCallbackQuery(); const operation = ctx.match[1] as Operation; const items = await listArchive(userId(ctx)); const item = items.find(x => !x.result);
     if (!item || !operationLabels[operation]) return ctx.reply('لم أجد ملفًا مرفوعًا ينتظر المعالجة. أرسل الملف أولًا.');
-    item.operation = operation;
-    await processOperation(ctx, item, (await import('./db.js')).upsertTelegramUser(ctx.from).then(u => u.plan));
+    item.operation = operation; const user = await upsertTelegramUser(ctx.from!); await processOperation(ctx, item, user.plan as Plan);
   });
 
   bot.callbackQuery(/^fileai:(choose|redo|pdf|share):(.+)$/, async ctx => {
-    await ctx.answerCallbackQuery();
-    const action = ctx.match[1];
-    const item = await loadArchive(String(ctx.from.id), ctx.match[2]);
-    if (!item) return ctx.reply('لم أجد هذه النتيجة في أرشيفك.');
+    await ctx.answerCallbackQuery(); const action = ctx.match[1]; const item = await loadArchive(userId(ctx), ctx.match[2]); if (!item) return ctx.reply('لم أجد هذه النتيجة في أرشيفك.');
     if (action === 'choose') return ctx.reply('اختر عملية جديدة:', { reply_markup: menu() });
     if (action === 'pdf' || action === 'share') return sendPdf(ctx, item);
-    const user = (await import('./db.js')).upsertTelegramUser(ctx.from);
-    item.operation = item.operation;
-    item.result = '';
-    await processOperation(ctx, item, (await user).plan);
+    item.result = ''; const user = await upsertTelegramUser(ctx.from!); return processOperation(ctx, item, user.plan as Plan);
   });
 
   bot.callbackQuery('fileai:archive', async ctx => {
-    await ctx.answerCallbackQuery();
-    const items = await listArchive(String(ctx.from.id));
-    if (!items.length) return ctx.reply('أرشيف الملفات فارغ.');
-    const keyboard = new InlineKeyboard();
-    for (const item of items) keyboard.text(`${operationLabels[item.operation]} — ${item.sourceName.slice(0, 28)}`, `fileai:share:${item.id}`).row();
-    keyboard.text('الرئيسية', 'home');
-    return ctx.reply('أرشيف QMRMed:', { reply_markup: keyboard });
+    await ctx.answerCallbackQuery(); const items = await listArchive(userId(ctx)); if (!items.length) return ctx.reply('أرشيف الملفات فارغ.');
+    const keyboard = new InlineKeyboard(); for (const item of items) keyboard.text(`${operationLabels[item.operation]} — ${item.sourceName.slice(0, 28)}`, `fileai:share:${item.id}`).row(); keyboard.text('الرئيسية', 'home'); return ctx.reply('أرشيف QMRMed:', { reply_markup: keyboard });
   });
 
   bot.command('archive', async ctx => {
-    const items = await listArchive(String(ctx.from.id));
-    if (!items.length) return ctx.reply('أرشيف الملفات فارغ.');
-    const keyboard = new InlineKeyboard();
-    for (const item of items) keyboard.text(`${operationLabels[item.operation]} — ${item.sourceName.slice(0, 28)}`, `fileai:share:${item.id}`).row();
-    return ctx.reply('أرشيف QMRMed:', { reply_markup: keyboard });
+    const items = await listArchive(userId(ctx)); if (!items.length) return ctx.reply('أرشيف الملفات فارغ.');
+    const keyboard = new InlineKeyboard(); for (const item of items) keyboard.text(`${operationLabels[item.operation]} — ${item.sourceName.slice(0, 28)}`, `fileai:share:${item.id}`).row(); return ctx.reply('أرشيف QMRMed:', { reply_markup: keyboard });
   });
 }
-EOF
