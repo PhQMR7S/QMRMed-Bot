@@ -46,13 +46,32 @@ export function studyStageMenu(department: string) {
     .text('⬅️ الأقسام', 'study_mode').row().text('🏠 الرئيسية', 'home');
 }
 
+export function plansMenu() {
+  return new InlineKeyboard()
+    .text('💙 PLUS — Telegram Stars', 'plan:PLUS').row()
+    .text('💜 PRO — Telegram Stars', 'plan:PRO').row()
+    .text('💳 طرق الدفع الأخرى', 'payment_methods').row()
+    .text('🎟️ تفعيل كود اشتراك', 'redeem_code').row()
+    .text('📜 الشروط', 'terms').text('🆘 دعم الدفع', 'paysupport').row()
+    .text('⬅️ الرئيسية', 'home');
+}
+
 export function adminMenu() {
   return new InlineKeyboard()
     .text('📊 Dashboard', 'admin:stats').text('👥 المستخدمون', 'admin:users').row()
     .text('📚 المحتوى', 'admin:content').text('☁️ Google Drive', 'admin:drive').row()
     .text('🤖 OmniRoute / AI', 'admin:ai').text('📣 الإرسال الجماعي', 'admin:broadcast').row()
     .text('📝 الأسئلة والوزاريات', 'admin:questions').row()
+    .text('🎟️ أكواد الاشتراك', 'admin:codes').row()
     .text('⬅️ الرئيسية', 'home');
+}
+
+export function adminCodesMenu() {
+  return new InlineKeyboard()
+    .text('💙 PLUS — 30 يوم', 'admin:code:create:PLUS:30').text('💜 PRO — 30 يوم', 'admin:code:create:PRO:30').row()
+    .text('💙 PLUS — 90 يوم', 'admin:code:create:PLUS:90').text('💜 PRO — 90 يوم', 'admin:code:create:PRO:90').row()
+    .text('💙 PLUS — 365 يوم', 'admin:code:create:PLUS:365').text('💜 PRO — 365 يوم', 'admin:code:create:PRO:365').row()
+    .text('⬅️ لوحة الإدارة', 'admin');
 }
 
 export function adminDriveMenu() {
