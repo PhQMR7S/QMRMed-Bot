@@ -5,9 +5,9 @@
   "description": "Standalone QMRMed Telegram learning bot",
   "type": "module",
   "scripts": {
-    "dev": "QMRMED_PDF_PYTHON=.qmrmed-file-ai-venv/bin/python tsx --import ./src/file-ai-preload.ts src/index.ts",
+    "dev": "tsx --import ./src/file-ai-preload.ts src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "QMRMED_PDF_PYTHON=.qmrmed-file-ai-venv/bin/python node --import ./dist/src/file-ai-preload.js dist/src/index.js",
+    "start": "node --import ./dist/src/file-ai-preload.js dist/src/index.js",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
