@@ -1,1 +1,0 @@
-// Reserved for future command modules. Telegram command handlers are registered in src/index.ts so they share the same bot instance and state.
