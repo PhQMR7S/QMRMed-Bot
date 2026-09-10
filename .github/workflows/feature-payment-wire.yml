@@ -1,0 +1,92 @@
+name: One-time payment wiring
+
+on:
+  push:
+    branches:
+      - feat/qmrmed-final-completion
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/qmrmed-final-completion
+      - name: Wire payment and activation flows
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/index.ts')
+          s = p.read_text()
+
+          def rep(old, new, name):
+              global s
+              n = s.count(old)
+              if n != 1:
+                  raise SystemExit(f'{name}: expected 1 match, got {n}')
+              s = s.replace(old, new, 1)
+
+          rep("import { getAdminDashboard, getDriveStatus, runAdminDriveSync, getContentBreakdown } from './admin-panel.js';", "import { getAdminDashboard, getDriveStatus, runAdminDriveSync, getContentBreakdown } from './admin-panel.js';\nimport { sendStarsInvoice, validatePreCheckout, recordSuccessfulStarsPayment } from './payments.js';\nimport { createActivationCode, redeemActivationCode } from './activation.js';\nimport { adminCodesMenu, plansMenu } from './menu.js';", 'imports')
+          rep("type PendingAction = 'search' | 'ai' | 'broadcast';", "type PendingAction = 'search' | 'ai' | 'broadcast' | 'activation_code';", 'pending type')
+
+          rep("bot.command('plans', async ctx => ctx.reply('💎 اشتراكات QMRMed\\n\\n🆓 FREE — المحتوى الأساسي\\n💙 PLUS — مزايا موسعة\\n💜 PRO — الوصول الكامل\\n\\nسيتم تفعيل الاشتراك فقط بعد التحقق من الدفع.', { reply_markup: new InlineKeyboard().text('💙 PLUS', 'plan:PLUS').text('💜 PRO', 'plan:PRO').row().text('📜 الشروط', 'terms').row().text('⬅️ الرئيسية', 'home') }));", "bot.command('plans', async ctx => ctx.reply('💎 اشتراكات QMRMed\\n\\n🆓 FREE — التجربة المجانية مرة واحدة فقط.\\n💙 PLUS — اشتراك مدفوع.\\n💜 PRO — اشتراك مدفوع.\\n\\n💳 الدفع الرقمي داخل تيليجرام يتم عبر Telegram Stars فقط.\\n🎟️ ويمكن تفعيل أكواد اشتراك يمنحها الأدمن.', { reply_markup: plansMenu() }));", 'plans command')
+
+          rep("bot.command('paysupport', async ctx => ctx.reply('💳 دعم الدفع\\n\\nلأي مشكلة تتعلق بالدفع أو الاشتراك، أرسل تفاصيل العملية إلى دعم QMRMed. لا ترسل مفاتيح أو رموزًا سرية.', { reply_markup: backMenu }));", "bot.command('paysupport', async ctx => ctx.reply(`💳 دعم الدفع\\n\\nللاشتراكات الرقمية داخل تيليجرام استخدم Telegram Stars.\\n\\nللطرق اليدوية/الخارجية، تواصل مع دعم QMRMed لإثبات العملية ثم يقوم الأدمن بالتفعيل.\\n\\n${config.SUPPORT_HANDLE ? `الدعم: ${config.SUPPORT_HANDLE}\\n` : ''}لا ترسل مفاتيح أو رموزًا سرية.`, { reply_markup: backMenu }));", 'pay support')
+
+          marker = "bot.command('cancel', async ctx => { pending.delete(userKey(ctx)); sessions.delete(userKey(ctx)); await ctx.reply('❌ تم إلغاء العملية الحالية.', { reply_markup: mainMenu }); });"
+          payment_handlers = """bot.preCheckoutQuery(async ctx => {
+  const q = ctx.preCheckoutQuery;
+  const result = await validatePreCheckout(q.invoice_payload, q.from.id, q.currency, q.total_amount);
+  if (result.ok) return ctx.api.raw.answerPreCheckoutQuery({ pre_checkout_query_id: q.id, ok: true });
+  return ctx.api.raw.answerPreCheckoutQuery({ pre_checkout_query_id: q.id, ok: false, error_message: result.reason });
+});
+
+bot.on('message:successful_payment', async ctx => {
+  const payment = ctx.message.successful_payment;
+  try {
+    const user = await getUser(ctx);
+    const result = await recordSuccessfulStarsPayment(user.id, payment.invoice_payload, payment.currency, payment.total_amount, payment.telegram_payment_charge_id, payment.provider_payment_charge_id);
+    if (result.alreadyProcessed) return ctx.reply('✅ تم تسجيل هذا الدفع مسبقًا. اشتراكك محفوظ.');
+    return ctx.reply(`🎉 تم الدفع بنجاح عبر Telegram Stars.\\n\\n💎 الخطة: ${result.plan}\\n✅ تم تفعيل الاشتراك على حسابك.`, { reply_markup: plansMenu() });
+  } catch (error) {
+    console.error('Successful payment processing failed:', error);
+    return ctx.reply('⚠️ تم استلام إشعار الدفع، لكن تعذر إكمال التفعيل تلقائيًا. تم تسجيل الخطأ وسيتابعه الأدمن.');
+  }
+});
+
+"""
+          rep(marker, payment_handlers + marker, 'payment handlers')
+
+          rep("bot.callbackQuery(/^plan:(PLUS|PRO)$/, async ctx => { await ctx.answerCallbackQuery(); await render(ctx, `💎 ${ctx.match[1]}\\n\\nالزر لا يمنح الاشتراك مباشرة. عند تفعيل الدفع، يجب أن تتم عملية الشراء عبر Telegram Stars ثم التحقق من successful_payment قبل منح الخطة.`, new InlineKeyboard().text('📜 الشروط', 'terms').row().text('💳 دعم الدفع', 'paysupport').row().text('⬅️ الاشتراك', 'plans')); });", "bot.callbackQuery(/^plan:(PLUS|PRO)$/, async ctx => { await ctx.answerCallbackQuery(); try { await sendStarsInvoice(ctx, ctx.match[1] as 'PLUS' | 'PRO'); } catch (error) { await ctx.reply(`⚠️ ${error instanceof Error ? error.message : String(error)}\\n\\nيمكنك أيضًا استخدام كود اشتراك أو مراجعة طرق الدفع الأخرى.`, { reply_markup: plansMenu() }); } });", 'plan callback')
+
+          insert_callbacks = """bot.callbackQuery('payment_methods', async ctx => {
+  await ctx.answerCallbackQuery();
+  return render(ctx, `💳 طرق الدفع\\n\\n⭐ Telegram Stars: طريقة الدفع الأساسية للاشتراكات الرقمية داخل تيليجرام.\\n\\n💳 Mastercard: ${config.MASTERCARD_ACCOUNT}\\n💰 Zain Cash: ${config.ZAINCASH_NUMBER}\\n🪙 العملات الرقمية: ${config.CRYPTO_PAYMENT_NOTE}\\n\\n⚠️ طرق Mastercard/Zain Cash/العملات الرقمية هي مسار يدوي/خارجي؛ لا يتم تفعيل الاشتراك بمجرد إرسال المبلغ. يجب التحقق من العملية ثم تفعيل الحساب بواسطة الأدمن.\\n\\n🚚 ${config.DELIVERY_NOTE}`, new InlineKeyboard().text('🎟️ تفعيل كود اشتراك', 'redeem_code').row().text('🆘 دعم الدفع', 'paysupport').row().text('⬅️ الاشتراك', 'plans'));
+});
+
+bot.callbackQuery('redeem_code', async ctx => {
+  await ctx.answerCallbackQuery();
+  pending.set(userKey(ctx), 'activation_code');
+  return render(ctx, '🎟️ أرسل كود الاشتراك الآن.\\n\\nالكود يفعّل الخطة والمدة المحددة له مرة واحدة أو حسب عدد مرات الاستخدام الذي حدده الأدمن.', new InlineKeyboard().text('❌ إلغاء', 'home'));
+});
+
+"""
+          rep("bot.callbackQuery('terms', async ctx => { await ctx.answerCallbackQuery(); return render(ctx, '📜 شروط الاستخدام\\n\\nاستخدام QMRMed تعليمي فقط. المحتوى لا يُعد تشخيصًا أو استشارة طبية شخصية.'); });", insert_callbacks + "bot.callbackQuery('terms', async ctx => { await ctx.answerCallbackQuery(); return render(ctx, '📜 شروط الاستخدام\\n\\nاستخدام QMRMed تعليمي فقط. المحتوى لا يُعد تشخيصًا أو استشارة طبية شخصية.\\n\\nقبل شراء الاشتراك يجب مراجعة الشروط وسياسة الدعم.'); });", 'payment callbacks')
+
+          rep("if (data === 'admin:questions') { const d = await getAdminDashboard(); return render(ctx, `📝 الأسئلة والوزاريات\\n\\n❓ بنك الأسئلة: ${d.questions}\\n📝 الوزاريات: ${d.ministerialQuestions}\\n🎯 المحاولات: ${d.attempts}`, adminMenu()); }", "if (data === 'admin:questions') { const d = await getAdminDashboard(); return render(ctx, `📝 الأسئلة والوزاريات\\n\\n❓ بنك الأسئلة: ${d.questions}\\n📝 الوزاريات: ${d.ministerialQuestions}\\n🎯 المحاولات: ${d.attempts}`, adminMenu()); }\n  if (data === 'admin:codes') return render(ctx, '🎟️ إدارة أكواد الاشتراك\\n\\nاختر الخطة والمدة لإنشاء كود جديد. الكود لا يمنح أي صلاحيات أدمن؛ يمنح الاشتراك المحدد فقط.', adminCodesMenu());\n  if (data.startsWith('admin:code:create:')) { const parts = data.split(':'); const plan = parts[3] as 'PLUS' | 'PRO'; const days = Number(parts[4]); if (!['PLUS', 'PRO'].includes(plan) || !Number.isInteger(days) || days <= 0) return render(ctx, '❌ إعداد كود غير صالح.', adminCodesMenu()); const code = await createActivationCode(String(ctx.from?.id ?? ''), plan, days, 1); return render(ctx, `🎟️ تم إنشاء كود اشتراك\\n\\nالخطة: ${plan}\\nالمدة: ${days} يوم\\nالاستخدامات: ${code.maxUses}\\n\\n🔐 الكود:\\n${code.code}\\n\\nأرسل الكود للمستخدم المستحق فقط.`, adminCodesMenu()); }", 'admin codes')
+
+          old_action = "if (action === 'broadcast') { if (!isAdmin(ctx.from.id)) return ctx.reply('غير مصرح.');"
+          rep(old_action, "if (action === 'activation_code') { try { const result = await redeemActivationCode(user.id, text); return ctx.reply(`🎉 تم تفعيل الاشتراك بنجاح.\\n\\n💎 الخطة: ${result.plan}\\n📅 المدة: ${result.durationDays} يوم.`, { reply_markup: plansMenu() }); } catch (error) { return ctx.reply(`❌ ${error instanceof Error ? error.message : String(error)}\\n\\nحاول مرة أخرى أو استخدم /cancel.`, { reply_markup: backMenu }); } }\n  if (action === 'broadcast') { if (!isAdmin(ctx.from.id)) return ctx.reply('غير مصرح.');", 'activation input')
+
+          p.write_text(s)
+          PY
+          rm .github/workflows/feature-payment-wire.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/index.ts .github/workflows/feature-payment-wire.yml
+          git commit -m 'feat(payments): wire stars checkout and activation codes'
+          git push origin HEAD:feat/qmrmed-final-completion
