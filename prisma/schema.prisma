@@ -32,6 +32,13 @@ enum ContentKind {
   REFERENCE
 }
 
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+  FAILED
+}
+
 model User {
   id              Int       @id @default(autoincrement())
   telegramId      String    @unique
@@ -49,6 +56,8 @@ model User {
   progress        Progress[]
   attempts        Attempt[]
   subscriptions   Subscription[]
+  payments        PaymentTransaction[]
+  codeRedemptions ActivationCodeRedemption[]
 }
 
 model Subscription {
@@ -63,6 +72,50 @@ model Subscription {
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId, active])
+}
+
+model PaymentTransaction {
+  id                       Int           @id @default(autoincrement())
+  userId                   Int
+  plan                     Plan
+  provider                 String
+  currency                 String
+  amount                   Int
+  payload                  String
+  telegramPaymentChargeId  String?       @unique
+  providerPaymentChargeId  String?
+  status                   PaymentStatus @default(PENDING)
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+  user                     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, status])
+  @@index([payload])
+}
+
+model ActivationCode {
+  id                 Int      @id @default(autoincrement())
+  code               String   @unique
+  plan               Plan
+  durationDays       Int
+  maxUses            Int      @default(1)
+  usedCount          Int      @default(0)
+  active             Boolean  @default(true)
+  expiresAt          DateTime?
+  createdByTelegramId String
+  createdAt           DateTime @default(now())
+  redemptions         ActivationCodeRedemption[]
+  @@index([active, plan])
+}
+
+model ActivationCodeRedemption {
+  id         Int      @id @default(autoincrement())
+  codeId     Int
+  userId     Int
+  redeemedAt DateTime @default(now())
+  code       ActivationCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([codeId, userId])
+  @@index([userId, redeemedAt])
 }
 
 model Subject {
