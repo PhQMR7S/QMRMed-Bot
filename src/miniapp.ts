@@ -32,45 +32,29 @@ async function auth(req: IncomingMessage) { return upsertTelegramUser(validateIn
 function safeUserDir(userId: string) { return resolve(ARCHIVE_ROOT,userId.replace(/[^a-zA-Z0-9_-]/g,'_')); }
 async function localArchiveFor(userId: string) { const dir=safeUserDir(userId); try { await mkdir(dir,{recursive:true}); const names=(await readdir(dir)).filter(n=>n.endsWith('.json')).sort().reverse().slice(0,50); const items:any[]=[]; for(const name of names){try{const item=JSON.parse(await readFile(join(dir,name),'utf8'));items.push({id:item.id,sourceName:item.sourceName,operation:item.operation,operationLabel:operationLabels[item.operation]||item.operation,createdAt:item.createdAt||null,hasResult:Boolean(item.result)});}catch{}} return items; } catch { return []; } }
 async function localArchiveDetail(userId:string,id:string){if(!/^[a-zA-Z0-9_-]+$/.test(id)) return null; const dir=safeUserDir(userId); const file=resolve(dir,`${id}.json`); if(!file.startsWith(dir+'/')) return null; try{return JSON.parse(await readFile(file,'utf8'));}catch{return null;}}
-async function archiveFor(userId:number,telegramId:string) {
-  const rows=await db.fileAiArchive.findMany({where:{userId},orderBy:{createdAt:'desc'},take:50,select:{id:true,sourceName:true,operation:true,createdAt:true,result:true}}).catch(()=>[]);
-  if(rows.length) return rows.map(x=>({id:x.id,sourceName:x.sourceName,operation:x.operation,operationLabel:operationLabels[x.operation]||x.operation,createdAt:x.createdAt.toISOString(),hasResult:Boolean(x.result)}));
-  return localArchiveFor(telegramId);
-}
-async function archiveDetail(userId:number,telegramId:string,id:string) {
-  if(!/^[a-zA-Z0-9_-]+$/.test(id)) return null;
-  const row=await db.fileAiArchive.findFirst({where:{id,userId},select:{id:true,sourceName:true,operation:true,createdAt:true,result:true}}).catch(()=>null);
-  if(row) return {id:row.id,sourceName:row.sourceName,operation:row.operation,operationLabel:operationLabels[row.operation]||row.operation,createdAt:row.createdAt.toISOString(),result:row.result};
-  const item=await localArchiveDetail(telegramId,id); if(!item)return null;
-  return {id:item.id,sourceName:item.sourceName,operation:item.operation,operationLabel:operationLabels[item.operation]||item.operation,createdAt:item.createdAt||null,result:item.result||''};
-}
-function subscriptionState(user:any, active:any, now=new Date()) {
-  if(active) return {status:'ACTIVE',label:'فعال',plan:active.plan,startsAt:active.startsAt.toISOString(),endsAt:active.endsAt.toISOString(),daysRemaining:Math.max(0,Math.ceil((active.endsAt.getTime()-now.getTime())/86400000))};
-  if(user.trialEndsAt && user.trialEndsAt>now) return {status:'TRIAL',label:'تجربة مجانية',plan:'FREE',startsAt:user.trialStartedAt?.toISOString()||null,endsAt:user.trialEndsAt.toISOString(),daysRemaining:Math.max(0,Math.ceil((user.trialEndsAt.getTime()-now.getTime())/86400000))};
-  return {status:'FREE',label:'مجاني',plan:'FREE',startsAt:null,endsAt:null,daysRemaining:0};
-}
+async function archiveFor(userId:number,telegramId:string) { const rows=await db.fileAiArchive.findMany({where:{userId},orderBy:{createdAt:'desc'},take:50,select:{id:true,sourceName:true,operation:true,createdAt:true,result:true}}).catch(()=>[]); if(rows.length) return rows.map(x=>({id:x.id,sourceName:x.sourceName,operation:x.operation,operationLabel:operationLabels[x.operation]||x.operation,createdAt:x.createdAt.toISOString(),hasResult:Boolean(x.result)})); return localArchiveFor(telegramId); }
+async function archiveDetail(userId:number,telegramId:string,id:string) { if(!/^[a-zA-Z0-9_-]+$/.test(id)) return null; const row=await db.fileAiArchive.findFirst({where:{id,userId},select:{id:true,sourceName:true,operation:true,createdAt:true,result:true}}).catch(()=>null); if(row) return {id:row.id,sourceName:row.sourceName,operation:row.operation,operationLabel:operationLabels[row.operation]||row.operation,createdAt:row.createdAt.toISOString(),result:row.result}; const item=await localArchiveDetail(telegramId,id); if(!item)return null; return {id:item.id,sourceName:item.sourceName,operation:item.operation,operationLabel:operationLabels[item.operation]||item.operation,createdAt:item.createdAt||null,result:item.result||''}; }
+function subscriptionState(user:any, active:any, now=new Date()) { if(active) return {status:'ACTIVE',label:'فعال',plan:active.plan,startsAt:active.startsAt.toISOString(),endsAt:active.endsAt.toISOString(),daysRemaining:Math.max(0,Math.ceil((active.endsAt.getTime()-now.getTime())/86400000))}; if(user.trialEndsAt && user.trialEndsAt>now) return {status:'TRIAL',label:'تجربة مجانية',plan:'FREE',startsAt:user.trialStartedAt?.toISOString()||null,endsAt:user.trialEndsAt.toISOString(),daysRemaining:Math.max(0,Math.ceil((user.trialEndsAt.getTime()-now.getTime())/86400000))}; return {status:'FREE',label:'مجاني',plan:'FREE',startsAt:null,endsAt:null,daysRemaining:0}; }
 function miniAppRouteLink(route:string) { if(!config.MINI_APP_URL)return null; try { const u=new URL(config.MINI_APP_URL); u.searchParams.set('route',route); return u.toString(); } catch { return null; } }
 function botDeepLink(start:string) { if(!config.MINI_APP_BOT_USERNAME)return null; const username=config.MINI_APP_BOT_USERNAME.replace(/^@/,''); return `https://t.me/${username}?start=${encodeURIComponent(start)}`; }
 async function handle(req:IncomingMessage,res:ServerResponse){
   try {
     const url=new URL(req.url||'/',`http://${header(req,'host')||'localhost'}`);
+    if(req.method==='GET' && url.pathname==='/api/health') return json(res,200,{ok:true,service:'qmrmed-miniapp',time:new Date().toISOString()});
     if(req.method==='GET' && (url.pathname==='/' || url.pathname==='/miniapp')) return serveStatic('index.html',res);
     if(req.method==='GET' && url.pathname.startsWith('/miniapp/')) return serveStatic(url.pathname.slice('/miniapp/'.length),res);
     if(req.method!=='GET') return json(res,405,{error:'Method not allowed'});
     const user=await auth(req);
     if(url.pathname==='/api/me'){
       const now=new Date();
-      const [completed,attempts,correct,archive,active]=await Promise.all([
-        db.progress.count({where:{userId:user.id,completed:true}}),db.attempt.count({where:{userId:user.id}}),db.attempt.count({where:{userId:user.id,correct:true}}),archiveFor(user.id,String(user.telegramId)),
-        db.subscription.findFirst({where:{userId:user.id,active:true,startsAt:{lte:now},endsAt:{gt:now}},orderBy:{endsAt:'desc'},select:{plan:true,startsAt:true,endsAt:true}})
-      ]);
+      const [completed,attempts,correct,archive,active]=await Promise.all([db.progress.count({where:{userId:user.id,completed:true}}),db.attempt.count({where:{userId:user.id}}),db.attempt.count({where:{userId:user.id,correct:true}}),archiveFor(user.id,String(user.telegramId)),db.subscription.findFirst({where:{userId:user.id,active:true,startsAt:{lte:now},endsAt:{gt:now}},orderBy:{endsAt:'desc'},select:{plan:true,startsAt:true,endsAt:true}})]);
       const subscription=subscriptionState(user,active,now);
-      return json(res,200,{id:user.id,telegramId:user.telegramId,username:user.username,firstName:user.firstName,lastName:user.lastName,department:user.department,stage:user.stage,plan:subscription.plan,accountPlan:user.plan,trialUsed:user.trialUsed,trialEndsAt:user.trialEndsAt,subscription,archiveCount:archive.length,progress:{completed,attempts,correct,accuracy:attempts?Math.round(correct/attempts*100):0},links:{miniapp:{home:miniAppRouteLink('home'),plans:miniAppRouteLink('plans'),subscription:miniAppRouteLink('subscription'),archive:miniAppRouteLink('archive'),account:miniAppRouteLink('account')},bot:{home:botDeepLink('home'),plans:botDeepLink('plans'),archive:botDeepLink('archive')}}});
+      return json(res,200,{id:user.id,telegramId:user.telegramId,username:user.username,firstName:user.firstName,lastName:user.lastName,department:user.department,stage:user.stage,plan:subscription.plan,accountPlan:user.plan,trialUsed:user.trialUsed,trialEndsAt:user.trialEndsAt,subscription,subscriptionEndsAt:subscription.endsAt?new Date(subscription.endsAt).toLocaleDateString('ar-IQ'):null,archiveCount:archive.length,progress:{completed,attempts,correct,accuracy:attempts?Math.round(correct/attempts*100):0},links:{miniapp:{home:miniAppRouteLink('home'),plans:miniAppRouteLink('plans'),subscription:miniAppRouteLink('subscription'),archive:miniAppRouteLink('archive'),account:miniAppRouteLink('account')},bot:{home:botDeepLink('home'),plans:botDeepLink('plans'),archive:botDeepLink('archive')}}});
     }
     if(url.pathname==='/api/plans') return json(res,200,[
-      {code:'FREE',name:'Free',icon:'🎁',current:user.plan==='FREE'&&!user.trialEndsAt,features:['تجربة المنصة التعليمية','الوصول إلى المحتوى المجاني','تجربة الذكاء الاصطناعي حسب سياسة المنصة','الحساب والأرشيف الشخصي'],prices:{}},
-      {code:'PLUS',name:'PLUS',icon:'💙',current:user.plan==='PLUS',features:['حدود AI أعلى','ميزات تعليمية موسعة','أرشيف موسع'],prices:{month:config.PLUS_MONTH_STARS,fiveMonths:config.PLUS_5MONTH_STARS,year:config.PLUS_YEAR_STARS}},
-      {code:'PRO',name:'PRO',icon:'💜',current:user.plan==='PRO',features:['أولوية أعلى للذكاء الاصطناعي','ميزات متقدمة','أعلى حدود للاستخدام والأرشيف'],prices:{month:config.PRO_MONTH_STARS,fiveMonths:config.PRO_5MONTH_STARS,year:config.PRO_YEAR_STARS}}
+      {code:'FREE',name:'Free',icon:'🎁',subtitle:'البداية الأساسية مع تجربة QMRMed.',current:user.plan==='FREE'&&!user.trialEndsAt,features:['تجربة المنصة التعليمية','الوصول إلى المحتوى المجاني','تجربة الذكاء الاصطناعي حسب سياسة المنصة','الحساب والأرشيف الشخصي'],prices:{}},
+      {code:'PLUS',name:'PLUS',icon:'💙',subtitle:'كل مزايا Free مع حدود وميزات موسعة.',current:user.plan==='PLUS',features:['حدود AI أعلى','ميزات تعليمية موسعة','أرشيف موسع'],prices:{month:config.PLUS_MONTH_STARS,fiveMonths:config.PLUS_5MONTH_STARS,year:config.PLUS_YEAR_STARS}},
+      {code:'PRO',name:'PRO',icon:'💜',subtitle:'كل مزايا PLUS مع أعلى مستوى من المنصة.',current:user.plan==='PRO',features:['أولوية أعلى للذكاء الاصطناعي','ميزات متقدمة','أعلى حدود للاستخدام والأرشيف'],prices:{month:config.PRO_MONTH_STARS,fiveMonths:config.PRO_5MONTH_STARS,year:config.PRO_YEAR_STARS}}
     ]);
     if(url.pathname==='/api/archive') return json(res,200,await archiveFor(user.id,String(user.telegramId)));
     if(url.pathname.startsWith('/api/archive/')){const id=decodeURIComponent(url.pathname.slice('/api/archive/'.length));const item=await archiveDetail(user.id,String(user.telegramId),id);if(!item)return json(res,404,{error:'النتيجة غير موجودة'});return json(res,200,item);}
