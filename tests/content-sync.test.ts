@@ -39,6 +39,15 @@ test('canonical Drive paths map department, stage, subject and content kind', ()
   assert.equal(contentKind('05 - تخدير/01 - المرحلة الأولى/Anesthesia/05 - حالات سريرية/case.pdf'), 'CASE');
 });
 
+test('canonical materials hierarchy maps the canonical subject and indexes study files as SOURCE', () => {
+  assert.deepEqual(metadataFromPath('01 - طب بشري/01 - المرحلة الأولى/01 - المواد/علم التشريح البشري والأنسجة/lecture.pdf'), {
+    department: 'Medicine',
+    stage: '1',
+    subjectName: 'علم التشريح البشري والأنسجة',
+  });
+  assert.equal(contentKind('01 - طب بشري/01 - المرحلة الأولى/01 - المواد/علم التشريح البشري والأنسجة/lecture.pdf'), 'SOURCE');
+});
+
 test('department aliases normalize across the supported QMRMed programs', () => {
   const cases: Array<[string, string]> = [
     ['صيدلة', 'Pharmacy'],
