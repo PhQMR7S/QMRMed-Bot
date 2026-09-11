@@ -24,6 +24,12 @@ test('markdown cleaner removes navigation noise and respects footer/length limit
   assert.equal(cleaned.includes('Core clinical content'), true);
   assert.equal(cleaned.includes('https://example.com'), false);
   assert.equal(cleaned.includes('## References'), false);
+  assert.equal(cleaned.includes('Reference list'), false);
+
+  const earlyFooter = cleanMedicalMarkdown('# Topic\n\nCore content\n\n## Related\nNavigation', 500);
+  assert.equal(earlyFooter.includes('Core content'), true);
+  assert.equal(earlyFooter.includes('## Related'), false);
+  assert.equal(earlyFooter.includes('Navigation'), false);
 
   const capped = cleanMedicalMarkdown('# Topic\n\n' + 'x'.repeat(500), 80);
   assert.equal(capped.length <= 80, true);
