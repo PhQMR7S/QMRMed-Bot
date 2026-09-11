@@ -44,86 +44,86 @@ enum PaymentStatus {
 }
 
 model User {
-  id                  Int                        @id @default(autoincrement())
-  telegramId          String                     @unique
-  username            String?
-  firstName           String?
-  lastName            String?
-  stage               String?
-  department          String?
-  plan                Plan                       @default(FREE)
-  trialUsed           Boolean                    @default(false)
-  trialStartedAt      DateTime?
-  trialEndsAt         DateTime?
-  termsAcceptedAt     DateTime?
-  createdAt           DateTime                   @default(now())
-  updatedAt           DateTime                   @updatedAt
-  progress            Progress[]
-  attempts            Attempt[]
-  subscriptions       Subscription[]
-  payments            PaymentTransaction[]
-  codeRedemptions     ActivationCodeRedemption[]
-  fileAiArchives      FileAiArchive[]
+  id              Int                        @id @default(autoincrement())
+  telegramId      String                     @unique
+  username        String?
+  firstName       String?
+  lastName        String?
+  stage           String?
+  department      String?
+  plan            Plan                       @default(FREE)
+  trialUsed       Boolean                    @default(false)
+  trialStartedAt  DateTime?
+  trialEndsAt     DateTime?
+  termsAcceptedAt DateTime?
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+  progress        Progress[]
+  attempts        Attempt[]
+  subscriptions   Subscription[]
+  payments        PaymentTransaction[]
+  codeRedemptions ActivationCodeRedemption[]
+  fileAiArchives  FileAiArchive[]
   @@map("qmr_users")
 }
 
 model Subscription {
-  id          Int      @id @default(autoincrement())
-  userId      Int
-  plan        Plan
-  provider    String
-  externalId  String?
-  startsAt    DateTime
-  endsAt      DateTime
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  plan       Plan
+  provider   String
+  externalId String?
+  startsAt   DateTime
+  endsAt     DateTime
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId, active])
   @@map("qmr_subscriptions")
 }
 
 model PaymentTransaction {
-  id                       Int           @id @default(autoincrement())
-  userId                   Int
-  plan                     Plan
-  provider                 String
+  id                      Int           @id @default(autoincrement())
+  userId                  Int
+  plan                    Plan
+  provider                String
   currency                String
-  amount                   Int
+  amount                  Int
   payload                 String
-  telegramPaymentChargeId  String?       @unique
-  providerPaymentChargeId  String?
-  status                   PaymentStatus @default(PENDING)
-  createdAt                DateTime      @default(now())
-  updatedAt                DateTime      @updatedAt
-  user                     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  telegramPaymentChargeId String?       @unique
+  providerPaymentChargeId String?
+  status                  PaymentStatus @default(PENDING)
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+  user                    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId, status])
   @@index([payload])
   @@map("qmr_payment_transactions")
 }
 
 model ActivationCode {
-  id                   Int                        @id @default(autoincrement())
-  code                 String                     @unique
-  plan                 Plan
-  durationDays         Int
-  maxUses              Int                        @default(1)
-  usedCount            Int                        @default(0)
-  active               Boolean                    @default(true)
-  expiresAt            DateTime?
-  createdByTelegramId  String
+  id                  Int                        @id @default(autoincrement())
+  code                String                     @unique
+  plan                Plan
+  durationDays        Int
+  maxUses             Int                        @default(1)
+  usedCount           Int                        @default(0)
+  active              Boolean                    @default(true)
+  expiresAt           DateTime?
+  createdByTelegramId String
   createdAt            DateTime                   @default(now())
-  redemptions          ActivationCodeRedemption[]
+  redemptions         ActivationCodeRedemption[]
   @@index([active, plan])
   @@map("qmr_activation_codes")
 }
 
 model ActivationCodeRedemption {
-  id          Int            @id @default(autoincrement())
-  codeId      Int
-  userId      Int
-  redeemedAt  DateTime       @default(now())
-  code        ActivationCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         Int            @id @default(autoincrement())
+  codeId     Int
+  userId     Int
+  redeemedAt DateTime       @default(now())
+  code       ActivationCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([codeId, userId])
   @@index([userId, redeemedAt])
   @@map("qmr_activation_code_redemptions")
@@ -209,18 +209,18 @@ model ContentSource {
 }
 
 model ContentChunk {
-  id         Int          @id @default(autoincrement())
-  sourceId   Int
-  subjectId  Int?
-  kind       ContentKind
-  title      String
-  text       String
-  chunkIndex Int          @default(0)
+  id          Int           @id @default(autoincrement())
+  sourceId    Int
+  subjectId   Int?
+  kind        ContentKind
+  title       String
+  text        String
+  chunkIndex  Int           @default(0)
   driveFileId String
-  source     ContentSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  subject    Subject?      @relation(fields: [subjectId], references: [id], onDelete: SetNull)
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+  source      ContentSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  subject     Subject?      @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
   @@unique([driveFileId, chunkIndex])
   @@index([sourceId, kind])
   @@index([subjectId, kind])
@@ -266,12 +266,12 @@ model Attempt {
 }
 
 model Progress {
-  id         Int      @id @default(autoincrement())
-  userId     Int
-  lessonId   Int
-  completed  Boolean  @default(false)
-  updatedAt  DateTime @updatedAt
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  lessonId  Int
+  completed Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([userId, lessonId])
   @@map("qmr_progress")
 }
