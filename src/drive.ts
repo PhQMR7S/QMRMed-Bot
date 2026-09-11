@@ -112,10 +112,14 @@ export async function listDriveFiles(rootFolderId: string) {
   if (!rootId) throw new Error('Google Drive root folder is empty');
   const result: Array<DriveFile & { path: string }> = [];
   const queue: Array<{ id: string; path: string }> = [{ id: rootId, path: '' }];
+  const visitedFolders = new Set<string>();
+  const seenFiles = new Set<string>();
   let foldersScanned = 0;
 
   while (queue.length) {
     const current = queue.shift()!;
+    if (visitedFolders.has(current.id)) continue;
+    visitedFolders.add(current.id);
     foldersScanned++;
     console.log(`  Scanning folder ${foldersScanned} (pending: ${queue.length})...`);
     let pageToken = '';
@@ -133,12 +137,13 @@ export async function listDriveFiles(rootFolderId: string) {
       for (const file of data.files ?? []) {
         const path = current.path ? `${current.path}/${file.name}` : file.name;
         if (file.mimeType === 'application/vnd.google-apps.folder') {
-          queue.push({ id: file.id, path });
-        } else {
+          if (!visitedFolders.has(file.id)) queue.push({ id: file.id, path });
+        } else if (!seenFiles.has(file.id)) {
+          seenFiles.add(file.id);
           result.push({ ...file, path });
         }
       }
-      console.log(`    Found ${data.files?.length ?? 0} entries; total files: ${result.length}; pending folders: ${queue.length}`);
+      console.log(`    Found ${data.files?.length ?? 0} entries; unique files: ${result.length}; pending folders: ${queue.length}`);
       pageToken = data.nextPageToken ?? '';
     } while (pageToken);
   }
