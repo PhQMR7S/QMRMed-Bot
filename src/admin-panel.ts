@@ -1,6 +1,7 @@
 import type { ContentKind, Plan } from '@prisma/client';
 import { db } from './db.js';
 import { config } from './config.js';
+import { normalizeDriveFolderId } from './drive.js';
 import { syncGoogleDrive } from './content-sync.js';
 
 export type AdminDashboard = {
@@ -20,10 +21,11 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
 }
 
 export async function getDriveStatus() {
-  const root = config.GOOGLE_DRIVE_ROOT_FOLDER_ID;
-  if (!root) return { configured: false as const, rootFolderId: null, state: null };
-  const state = await db.driveSyncState.findUnique({ where: { rootFolderId: root } });
-  return { configured: true as const, rootFolderId: root, state };
+  const configuredRoot = config.GOOGLE_DRIVE_ROOT_FOLDER_ID;
+  if (!configuredRoot) return { configured: false as const, rootFolderId: null, state: null };
+  const rootFolderId = normalizeDriveFolderId(configuredRoot);
+  const state = await db.driveSyncState.findUnique({ where: { rootFolderId } });
+  return { configured: true as const, rootFolderId, state };
 }
 
 export async function runAdminDriveSync() { return syncGoogleDrive(); }
