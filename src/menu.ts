@@ -1,4 +1,5 @@
 import { InlineKeyboard } from 'grammy';
+import { config } from './config.js';
 
 export const mainMenu = new InlineKeyboard()
   .text('📚 الدراسة', 'subjects').text('🎯 وضع الدراسة', 'study_mode').row()
@@ -7,7 +8,9 @@ export const mainMenu = new InlineKeyboard()
   .text('🧠 الاختبارات', 'exams').text('📊 تقدمي', 'progress').row()
   .text('💎 الاشتراك', 'plans').text('🎁 التجربة', 'trial').row()
   .text('👤 حسابي', 'account').text('⚙️ الإعدادات', 'settings').row()
-  .text('ℹ️ عن QMRMed', 'about');
+  .text('ℹ️ عن QMRMed', 'about')
+  .row();
+if (config.MINI_APP_URL) mainMenu.webApp('📱 QMRMed', config.MINI_APP_URL);
 
 export const backMenu = new InlineKeyboard().text('⬅️ الرئيسية', 'home');
 export const cancelMenu = new InlineKeyboard().text('❌ إلغاء', 'home');
