@@ -15,9 +15,11 @@
     return true;
   };
 
-  // app.js owns the actual rendering. Initialize it explicitly because the
-  // standalone Mini App is also opened directly by its public URL.
-  if (typeof window.render === 'function') window.render();
+  // app.js is a classic script, so its top-level `render` binding is visible
+  // to this following classic script even though it is not a window property.
+  // The previous check used window.render and therefore never initialized the
+  // first screen.
+  if (typeof render === 'function') render();
 
   if (!activateRoute()) {
     const observer = new MutationObserver(() => { if (activateRoute()) observer.disconnect(); });
