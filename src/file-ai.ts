@@ -97,47 +97,31 @@ function promptFor(operation: Operation, sourceName: string, text: string) {
   };
   return `${common}\n\nالمطلوب:\n${task[operation]}\n\nالنص المستخرج:\n${text}`;
 }
-
 function splitText(text: string, target = AI_CHUNK_TARGET_CHARS) {
-  const chunks: string[] = [];
-  let rest = text.trim();
-  while (rest.length > target) {
-    let cut = Math.max(rest.lastIndexOf('\n\n', target), rest.lastIndexOf('\n', target), rest.lastIndexOf(' ', target));
-    if (cut < Math.floor(target * 0.65)) cut = target;
-    chunks.push(rest.slice(0, cut).trim());
-    rest = rest.slice(cut).trimStart();
-  }
-  if (rest) chunks.push(rest);
-  return chunks;
+  const chunks: string[] = []; let rest = text.trim();
+  while (rest.length > target) { let cut = Math.max(rest.lastIndexOf('\n\n', target), rest.lastIndexOf('\n', target), rest.lastIndexOf(' ', target)); if (cut < Math.floor(target * 0.65)) cut = target; chunks.push(rest.slice(0, cut).trim()); rest = rest.slice(cut).trimStart(); }
+  if (rest) chunks.push(rest); return chunks;
 }
-
-async function chat(plan: Plan, messages: AIMessage[], temperature = 0.2) {
-  return routedChat('study', plan, messages, temperature);
-}
-
+async function chat(plan: Plan, messages: AIMessage[], temperature = 0.2) { return routedChat('study', plan, messages, temperature); }
 async function generate(operation: Operation, plan: Plan, sourceName: string, text: string) {
   if (text.length <= AI_DIRECT_MAX_CHARS) return chat(plan, [{ role: 'system', content: 'QMRMed Lecture Intelligence: grounded file transformation only.' }, { role: 'user', content: promptFor(operation, sourceName, text) }]);
-
-  const chunks = splitText(text);
-  const evidence: string[] = [];
+  const chunks = splitText(text); const evidence: string[] = [];
   for (let i = 0; i < chunks.length; i += 1) {
     const instruction = `حلّل الجزء ${i + 1} من ${chunks.length} من ملف "${sourceName}". استخرج فقط المعلومات اللازمة لتنفيذ المهمة التالية، بدون مقدمات أو معلومات خارج النص. المهمة: ${operationLabels[operation]}. أعد دليلًا موجزًا يصلح للدمج النهائي، بحد أقصى ${AI_EVIDENCE_MAX_CHARS} حرفًا.\n\n${chunks[i]}`;
     evidence.push(await chat(plan, [{ role: 'system', content: 'QMRMed source-grounded extraction. Never invent facts.' }, { role: 'user', content: instruction }], 0.1));
   }
-
   const combinedEvidence = evidence.join('\n\n--- جزء جديد ---\n\n').slice(0, AI_SYNTHESIS_MAX_CHARS);
   return chat(plan, [{ role: 'system', content: 'QMRMed Lecture Intelligence: synthesize only from the supplied evidence. Do not invent or import outside medical facts.' }, { role: 'user', content: promptFor(operation, sourceName, combinedEvidence) }]);
 }
-
 async function withUserLock<T>(uid: string, task: () => Promise<T>): Promise<T> {
   const previous = operationLocks.get(uid) ?? Promise.resolve();
   let release!: () => void;
   const current = new Promise<void>((resolve) => { release = resolve; });
-  operationLocks.set(uid, previous.then(() => current));
+  const queued = previous.then(() => current);
+  operationLocks.set(uid, queued);
   try { await previous; return await task(); }
-  finally { release(); if (operationLocks.get(uid) === current) operationLocks.delete(uid); }
+  finally { release(); if (operationLocks.get(uid) === queued) operationLocks.delete(uid); }
 }
-
 async function createPdf(item: ArchiveItem) {
   const work = join(tmpdir(), `qmrmed-pdf-${randomUUID()}`); await mkdir(work, { recursive: true });
   const input = join(work, 'input.json'); const output = join(work, `${safeName(item.sourceName)}-${item.operation}.pdf`);
@@ -152,57 +136,23 @@ async function processOperation(ctx: Context, item: ArchiveItem, plan: Plan) {
   return withUserLock(item.userId, async () => {
     await ctx.reply(`جاري ${operationLabels[item.operation]} من محتوى الملف فقط…`);
     item.result = await generate(item.operation, plan, item.sourceName, item.text);
-    item.createdAt = new Date().toISOString();
-    await archive(item);
+    item.createdAt = new Date().toISOString(); await archive(item);
     await replyLong(ctx, `تم إنشاء ${operationLabels[item.operation]} من الملف.\n\n${item.result.slice(0, 18_000)}`, resultMenu(item.id));
     try { await sendPdf(ctx, item); } catch (error) { await ctx.reply(error instanceof Error ? error.message : String(error)); }
   });
 }
-
 export function registerFileAiHandlers(bot: Bot) {
   bot.on('message:document', async ctx => {
     const doc = ctx.message.document; const sourceName = doc.file_name ?? 'qmrmed-file';
     if (!doc.file_size || doc.file_size > MAX_FILE_BYTES) return ctx.reply('الملف أكبر من حد Telegram للتنزيل عبر Bot API (20 MB).');
-    try {
-      const file = await ctx.getFile(); if (!file.file_path) throw new Error('تعذر الحصول على مسار الملف من Telegram.');
-      const response = await fetch(`https://api.telegram.org/file/bot${config.BOT_TOKEN}/${file.file_path}`); if (!response.ok) throw new Error(`فشل تنزيل الملف من Telegram: ${response.status}`);
-      const text = await extractTextFromBuffer(Buffer.from(await response.arrayBuffer()), doc.mime_type ?? '', sourceName); if (text.length < 40) throw new Error('لم أستطع استخراج نص قابل للمعالجة من الملف. قد يكون PDF ممسوحًا ضوئيًا ويحتاج OCR.');
-      const item: ArchiveItem = { id: randomUUID(), userId: userId(ctx), sourceName, mimeType: doc.mime_type ?? 'application/octet-stream', operation: 'summary', createdAt: new Date().toISOString(), text, result: '' };
-      await archive(item); await ctx.reply(`تم استلام الملف: ${sourceName}\n\nاختر ما تريد إنشاءه من محتوى الملف.\n\nكل نتيجة تعتمد على الملف نفسه فقط، ويمكن حفظها وإرسالها كـ PDF.`, { reply_markup: menu() });
-    } catch (error) { await ctx.reply(error instanceof Error ? error.message : String(error)); }
+    try { const file = await ctx.getFile(); if (!file.file_path) throw new Error('تعذر الحصول على مسار الملف من Telegram.'); const response = await fetch(`https://api.telegram.org/file/bot${config.BOT_TOKEN}/${file.file_path}`); if (!response.ok) throw new Error(`فشل تنزيل الملف من Telegram: ${response.status}`); const text = await extractTextFromBuffer(Buffer.from(await response.arrayBuffer()), doc.mime_type ?? '', sourceName); if (text.length < 40) throw new Error('لم أستطع استخراج نص قابل للمعالجة من الملف. قد يكون PDF ممسوحًا ضوئيًا ويحتاج OCR.'); const item: ArchiveItem = { id: randomUUID(), userId: userId(ctx), sourceName, mimeType: doc.mime_type ?? 'application/octet-stream', operation: 'summary', createdAt: new Date().toISOString(), text, result: '' }; await archive(item); await ctx.reply(`تم استلام الملف: ${sourceName}\n\nاختر ما تريد إنشاءه من محتوى الملف.\n\nكل نتيجة تعتمد على الملف نفسه فقط، ويمكن حفظها وإرسالها كـ PDF.`, { reply_markup: menu() }); } catch (error) { await ctx.reply(error instanceof Error ? error.message : String(error)); }
   });
-
   bot.on('message:photo', async ctx => {
     const photo = ctx.message.photo.at(-1); if (!photo) return;
-    try {
-      const file = await ctx.api.getFile(photo.file_id); if (!file.file_path) throw new Error('تعذر الحصول على مسار الصورة.');
-      const response = await fetch(`https://api.telegram.org/file/bot${config.BOT_TOKEN}/${file.file_path}`); if (!response.ok) throw new Error(`فشل تنزيل الصورة: ${response.status}`);
-      const sourceName = `lecture-${Date.now()}.jpg`; const text = await extractTextFromBuffer(Buffer.from(await response.arrayBuffer()), 'image/jpeg', sourceName); if (text.length < 40) throw new Error('لم أستطع استخراج نص من الصورة. تأكد من وضوحها.');
-      const item: ArchiveItem = { id: randomUUID(), userId: userId(ctx), sourceName, mimeType: 'image/jpeg', operation: 'summary', createdAt: new Date().toISOString(), text, result: '' };
-      await archive(item); await ctx.reply('تمت قراءة الصورة. اختر العملية المطلوبة:', { reply_markup: menu() });
-    } catch (error) { await ctx.reply(error instanceof Error ? error.message : String(error)); }
+    try { const file = await ctx.api.getFile(photo.file_id); if (!file.file_path) throw new Error('تعذر الحصول على مسار الصورة.'); const response = await fetch(`https://api.telegram.org/file/bot${config.BOT_TOKEN}/${file.file_path}`); if (!response.ok) throw new Error(`فشل تنزيل الصورة: ${response.status}`); const sourceName = `lecture-${Date.now()}.jpg`; const text = await extractTextFromBuffer(Buffer.from(await response.arrayBuffer()), 'image/jpeg', sourceName); if (text.length < 40) throw new Error('لم أستطع استخراج نص من الصورة. تأكد من وضوحها.'); const item: ArchiveItem = { id: randomUUID(), userId: userId(ctx), sourceName, mimeType: 'image/jpeg', operation: 'summary', createdAt: new Date().toISOString(), text, result: '' }; await archive(item); await ctx.reply('تمت قراءة الصورة. اختر العملية المطلوبة:', { reply_markup: menu() }); } catch (error) { await ctx.reply(error instanceof Error ? error.message : String(error)); }
   });
-
-  bot.callbackQuery(/^fileai:op:(.+)$/, async ctx => {
-    await ctx.answerCallbackQuery(); const operation = ctx.match[1] as Operation; const items = await listArchive(userId(ctx)); const item = items.find(x => !x.result);
-    if (!item || !operationLabels[operation]) return ctx.reply('لم أجد ملفًا مرفوعًا ينتظر المعالجة. أرسل الملف أولًا.');
-    item.operation = operation; const user = await upsertTelegramUser(ctx.from!); await processOperation(ctx, item, user.plan as Plan);
-  });
-
-  bot.callbackQuery(/^fileai:(choose|redo|pdf|share):(.+)$/, async ctx => {
-    await ctx.answerCallbackQuery(); const action = ctx.match[1]; const item = await loadArchive(userId(ctx), ctx.match[2]); if (!item) return ctx.reply('لم أجد هذه النتيجة في أرشيفك.');
-    if (action === 'choose') return ctx.reply('اختر عملية جديدة:', { reply_markup: menu() });
-    if (action === 'pdf' || action === 'share') return sendPdf(ctx, item);
-    item.result = ''; const user = await upsertTelegramUser(ctx.from!); return processOperation(ctx, item, user.plan as Plan);
-  });
-
-  bot.callbackQuery('fileai:archive', async ctx => {
-    await ctx.answerCallbackQuery(); const items = await listArchive(userId(ctx)); if (!items.length) return ctx.reply('أرشيف الملفات فارغ.');
-    const keyboard = new InlineKeyboard(); for (const item of items) keyboard.text(`${operationLabels[item.operation]} — ${item.sourceName.slice(0, 28)}`, `fileai:share:${item.id}`).row(); keyboard.text('الرئيسية', 'home'); return ctx.reply('أرشيف QMRMed:', { reply_markup: keyboard });
-  });
-
-  bot.command('archive', async ctx => {
-    const items = await listArchive(userId(ctx)); if (!items.length) return ctx.reply('أرشيف الملفات فارغ.');
-    const keyboard = new InlineKeyboard(); for (const item of items) keyboard.text(`${operationLabels[item.operation]} — ${item.sourceName.slice(0, 28)}`, `fileai:share:${item.id}`).row(); return ctx.reply('أرشيف QMRMed:', { reply_markup: keyboard });
-  });
+  bot.callbackQuery(/^fileai:op:(.+)$/, async ctx => { await ctx.answerCallbackQuery(); const operation = ctx.match[1] as Operation; const items = await listArchive(userId(ctx)); const item = items.find(x => !x.result); if (!item || !operationLabels[operation]) return ctx.reply('لم أجد ملفًا مرفوعًا ينتظر المعالجة. أرسل الملف أولًا.'); item.operation = operation; const user = await upsertTelegramUser(ctx.from!); await processOperation(ctx, item, user.plan as Plan); });
+  bot.callbackQuery(/^fileai:(choose|redo|pdf|share):(.+)$/, async ctx => { await ctx.answerCallbackQuery(); const action = ctx.match[1]; const item = await loadArchive(userId(ctx), ctx.match[2]); if (!item) return ctx.reply('لم أجد هذه النتيجة في أرشيفك.'); if (action === 'choose') return ctx.reply('اختر عملية جديدة:', { reply_markup: menu() }); if (action === 'pdf' || action === 'share') return sendPdf(ctx, item); item.result = ''; const user = await upsertTelegramUser(ctx.from!); return processOperation(ctx, item, user.plan as Plan); });
+  bot.callbackQuery('fileai:archive', async ctx => { await ctx.answerCallbackQuery(); const items = await listArchive(userId(ctx)); if (!items.length) return ctx.reply('أرشيف الملفات فارغ.'); const keyboard = new InlineKeyboard(); for (const item of items) keyboard.text(`${operationLabels[item.operation]} — ${item.sourceName.slice(0, 28)}`, `fileai:share:${item.id}`).row(); keyboard.text('الرئيسية', 'home'); return ctx.reply('أرشيف QMRMed:', { reply_markup: keyboard }); });
+  bot.command('archive', async ctx => { const items = await listArchive(userId(ctx)); if (!items.length) return ctx.reply('أرشيف الملفات فارغ.'); const keyboard = new InlineKeyboard(); for (const item of items) keyboard.text(`${operationLabels[item.operation]} — ${item.sourceName.slice(0, 28)}`, `fileai:share:${item.id}`).row(); return ctx.reply('أرشيف QMRMed:', { reply_markup: keyboard); });
 }
