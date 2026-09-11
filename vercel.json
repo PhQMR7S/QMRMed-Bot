@@ -6,8 +6,7 @@
       "runtime": "nodejs22.x"
     }
   },
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/index.ts" },
-    { "src": "/", "dest": "/miniapp/index.html" }
+  "redirects": [
+    { "source": "/", "destination": "/miniapp/", "permanent": false }
   ]
 }
