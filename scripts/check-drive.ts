@@ -26,7 +26,13 @@ const { contentKind, metadataFromPath, shouldIndexPath } = await import('../src/
 const root = config.GOOGLE_DRIVE_ROOT_FOLDER_ID;
 if (!root) throw new Error('GOOGLE_DRIVE_ROOT_FOLDER_ID is not configured');
 
+console.log('=== QMRMed Google Drive Diagnostic ===');
+console.log('Connecting to Google Drive...');
+console.log('Scanning the configured root folder and its subfolders...');
+const startedAt = Date.now();
 const files = await listDriveFiles(root);
+console.log(`Drive scan completed in ${((Date.now() - startedAt) / 1000).toFixed(1)}s.`);
+
 const byKind = new Map<string, number>();
 const byDepartment = new Map<string, number>();
 const byStage = new Map<string, number>();
@@ -72,7 +78,6 @@ function printMap(title: string, values: Map<string, number>) {
   }
 }
 
-console.log('=== QMRMed Google Drive Diagnostic ===');
 console.log(`Drive files discovered: ${files.length}`);
 console.log(`Indexable QMRMed files: ${indexable}`);
 console.log(`Excluded files: ${excluded}`);
