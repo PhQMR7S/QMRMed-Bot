@@ -63,6 +63,7 @@ model User {
   subscriptions   Subscription[]
   payments        PaymentTransaction[]
   codeRedemptions ActivationCodeRedemption[]
+  fileAiArchives  FileAiArchive[]
   @@map("qmr_users")
 }
 
@@ -125,7 +126,6 @@ model ActivationCodeRedemption {
   user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([codeId, userId])
   @@index([userId, redeemedAt])
-  @@map("qmr_activation_code_redemptions")
 }
 
 model Subject {
@@ -236,6 +236,20 @@ model DriveSyncState {
   filesIndexed Int      @default(0)
   updatedAt    DateTime @updatedAt
   @@map("qmr_drive_sync_states")
+}
+
+model FileAiArchive {
+  id             String   @id
+  userId         Int
+  sourceName     String
+  mimeType       String
+  operation      String
+  sourceTextGzip Bytes
+  result         String
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, createdAt])
+  @@map("qmr_file_ai_archives")
 }
 
 model Attempt {
