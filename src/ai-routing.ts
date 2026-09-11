@@ -1,8 +1,8 @@
 import type { Plan } from '@prisma/client';
 import { config } from './config.js';
-import { omniChat, type AIMessage } from './ai.js';
+import { omniChat, type AIMessage } from './omni-client.js';
 
-export type { AIMessage } from './ai.js';
+export type { AIMessage } from './omni-client.js';
 
 export type AISection = 'study' | 'cases' | 'questions' | 'ministerial' | 'exams' | 'search' | 'admin';
 
