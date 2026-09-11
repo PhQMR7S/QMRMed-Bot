@@ -27,11 +27,16 @@ test('Mini App uses accessible vector icons instead of Unicode glyph placeholder
   assert.match(html, /aria-hidden="true"/, 'decorative icons must be hidden from screen readers');
 });
 
+test('Mini App asset paths are portable at both root and /miniapp/ entry points', async () => {
+  const html = await text('miniapp/index.html');
+  assert.match(html, /href="styles\.css\?v=/, 'CSS must use a relative path');
+  assert.match(html, /src="runtime\.js\?v=/, 'runtime must use a relative path');
+});
+
 test('Mini App loads runtime and keeps the shell independent of API readiness', async () => {
   const html = await text('miniapp/index.html');
   const runtime = await text('miniapp/runtime.js');
 
-  assert.notEqual(html.indexOf('src="/miniapp/runtime.js'), -1, 'runtime.js must be loaded');
   assert.match(runtime, /function render\(\)/, 'runtime must contain the render implementation');
   assert.match(runtime, /routeFromTelegram\(\)/, 'runtime must restore supported deep routes');
   assert.match(runtime, /routeFromTelegram\(\);\s*if \(tg\)/, 'runtime must actually apply the deep route before rendering');
