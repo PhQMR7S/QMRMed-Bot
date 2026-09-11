@@ -11,7 +11,7 @@
     "dev": "tsx --import ./src/file-ai-preload.ts src/index.ts",
     "prebuild": "prisma generate",
     "build": "tsc -p tsconfig.json",
-    "vercel-build": "prisma generate && npm run check && node scripts/prepare-vercel.mjs",
+    "vercel-build": "prisma generate && npm run check",
     "start": "node --import ./dist/src/file-ai-preload.js dist/src/index.js",
     "start:miniapp": "NODE_ENV=production node dist/src/miniapp-server.js",
     "db:generate": "prisma generate",
