@@ -6,17 +6,18 @@ export type { AIMessage } from './omni-client.js';
 
 export type AISection = 'study' | 'cases' | 'questions' | 'ministerial' | 'exams' | 'search' | 'admin';
 
+const modelGroups: Record<AISection, string | undefined> = {
+  study: config.OMNIROUTE_GROUP_STUDY,
+  cases: config.OMNIROUTE_GROUP_CASES,
+  questions: config.OMNIROUTE_GROUP_QUESTIONS,
+  ministerial: config.OMNIROUTE_GROUP_MINISTERIAL,
+  exams: config.OMNIROUTE_GROUP_EXAMS,
+  search: config.OMNIROUTE_GROUP_SEARCH,
+  admin: config.OMNIROUTE_GROUP_ADMIN,
+};
+
 export function selectModelGroup(section: AISection, plan: Plan) {
-  const groups: Record<AISection, string | undefined> = {
-    study: process.env.OMNIROUTE_GROUP_STUDY,
-    cases: process.env.OMNIROUTE_GROUP_CASES,
-    questions: process.env.OMNIROUTE_GROUP_QUESTIONS,
-    ministerial: process.env.OMNIROUTE_GROUP_MINISTERIAL,
-    exams: process.env.OMNIROUTE_GROUP_EXAMS,
-    search: process.env.OMNIROUTE_GROUP_SEARCH,
-    admin: process.env.OMNIROUTE_GROUP_ADMIN,
-  };
-  return groups[section] ?? (plan === 'PRO' ? undefined : process.env.OMNIROUTE_GROUP_DEFAULT);
+  return modelGroups[section] ?? (plan === 'PRO' ? undefined : config.OMNIROUTE_GROUP_DEFAULT);
 }
 
 export async function routedChat(section: AISection, plan: Plan, messages: AIMessage[], temperature = 0.2) {
@@ -29,13 +30,13 @@ export function aiRoutingSummary() {
     url: config.OMNIROUTE_URL,
     defaultModel: config.OMNIROUTE_MODEL,
     groups: {
-      study: process.env.OMNIROUTE_GROUP_STUDY ?? config.OMNIROUTE_MODEL,
-      cases: process.env.OMNIROUTE_GROUP_CASES ?? config.OMNIROUTE_MODEL,
-      questions: process.env.OMNIROUTE_GROUP_QUESTIONS ?? config.OMNIROUTE_MODEL,
-      ministerial: process.env.OMNIROUTE_GROUP_MINISTERIAL ?? config.OMNIROUTE_MODEL,
-      exams: process.env.OMNIROUTE_GROUP_EXAMS ?? config.OMNIROUTE_MODEL,
-      search: process.env.OMNIROUTE_GROUP_SEARCH ?? config.OMNIROUTE_MODEL,
-      admin: process.env.OMNIROUTE_GROUP_ADMIN ?? config.OMNIROUTE_MODEL,
+      study: config.OMNIROUTE_GROUP_STUDY ?? config.OMNIROUTE_MODEL,
+      cases: config.OMNIROUTE_GROUP_CASES ?? config.OMNIROUTE_MODEL,
+      questions: config.OMNIROUTE_GROUP_QUESTIONS ?? config.OMNIROUTE_MODEL,
+      ministerial: config.OMNIROUTE_GROUP_MINISTERIAL ?? config.OMNIROUTE_MODEL,
+      exams: config.OMNIROUTE_GROUP_EXAMS ?? config.OMNIROUTE_MODEL,
+      search: config.OMNIROUTE_GROUP_SEARCH ?? config.OMNIROUTE_MODEL,
+      admin: config.OMNIROUTE_GROUP_ADMIN ?? config.OMNIROUTE_MODEL,
     },
   };
 }
