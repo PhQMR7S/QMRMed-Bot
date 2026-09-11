@@ -72,14 +72,32 @@ export async function validatePreCheckout(payload: string, fromTelegramId: numbe
 export async function activateSubscriptionInTransaction(tx: DbTx, userId: number, plan: PaidPlan, days: number, provider: string, externalId?: string) {
   const now = new Date();
   const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
-  const current = await tx.subscription.findFirst({ where: { userId, plan, active: true, endsAt: { gt: now } }, orderBy: { endsAt: 'desc' } });
+
+  // A user has one effective paid plan. Close any active subscription belonging
+  // to the other paid tier before activating/renewing the requested tier.
+  await tx.subscription.updateMany({
+    where: { userId, active: true, plan: { not: plan } },
+    data: { active: false },
+  });
+
+  const current = await tx.subscription.findFirst({
+    where: { userId, plan, active: true, endsAt: { gt: now } },
+    orderBy: { endsAt: 'desc' },
+  });
   const start = current?.endsAt && current.endsAt > now ? current.endsAt : now;
   const ends = new Date(start.getTime() + days * 86_400_000);
+
   if (current) {
-    await tx.subscription.update({ where: { id: current.id }, data: { endsAt: ends, active: true, externalId: externalId ?? current.externalId } });
+    await tx.subscription.update({
+      where: { id: current.id },
+      data: { endsAt: ends, active: true, externalId: externalId ?? current.externalId },
+    });
   } else {
-    await tx.subscription.create({ data: { userId, plan, provider, externalId, startsAt: start, endsAt: ends, active: true } });
+    await tx.subscription.create({
+      data: { userId, plan, provider, externalId, startsAt: start, endsAt: ends, active: true },
+    });
   }
+
   return tx.user.update({ where: { id: user.id }, data: { plan } });
 }
 
