@@ -1,5 +1,11 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import { z } from 'zod';
+
+// Always load the project .env with override enabled. Android/Termux can inherit
+// empty GOOGLE_* variables from the parent shell; dotenv's default behavior does
+// not replace existing environment variables, which can make the config appear
+// unconfigured even when .env contains the credentials.
+dotenv.config({ override: true });
 
 const booleanFromEnv = z.preprocess((value) => {
   if (typeof value === 'boolean') return value;
