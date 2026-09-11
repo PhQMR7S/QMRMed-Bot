@@ -6,26 +6,35 @@
   <meta name="theme-color" content="#05070b" />
   <meta name="color-scheme" content="dark" />
   <title>QMRMed</title>
-  <link rel="stylesheet" href="/miniapp/styles.css?v=20260911-4" />
+  <link rel="stylesheet" href="/miniapp/styles.css?v=20260912-1" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
   <div id="app" class="app">
     <header class="topbar">
-      <button class="icon-btn top-action" data-action="back" aria-label="رجوع"><span class="svg-icon">‹</span></button>
-      <div class="brand" data-go="home"><div class="brand-mark"><span class="svg-icon">✚</span></div><div class="brand-copy"><strong>QMRMed</strong><span>For a Smarter Medical Future</span></div></div>
-      <button class="icon-btn top-action" data-action="menu" aria-label="المزيد"><span class="svg-icon">☰</span></button>
+      <button class="icon-btn top-action" data-action="back" aria-label="رجوع">
+        <span class="svg-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></span>
+      </button>
+      <div class="brand" data-go="home" role="button" tabindex="0" aria-label="الرئيسية">
+        <div class="brand-mark" aria-hidden="true">
+          <span class="svg-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span>
+        </div>
+        <div class="brand-copy"><strong>QMRMed</strong><span>For a Smarter Medical Future</span></div>
+      </div>
+      <button class="icon-btn top-action" data-action="menu" aria-label="المزيد">
+        <span class="svg-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></span>
+      </button>
     </header>
     <main id="view" class="view" aria-live="polite"><div class="loading"><div class="spinner"></div><span>جارٍ تحميل حسابك…</span></div></main>
     <nav class="bottom-nav" aria-label="التنقل الرئيسي">
-      <button data-route="home" class="nav-item active"><span class="nav-icon svg-icon">⌂</span><small>الرئيسية</small></button>
-      <button data-route="plans" class="nav-item"><span class="nav-icon svg-icon">♛</span><small>الاشتراك</small></button>
-      <button data-route="archive" class="nav-item"><span class="nav-icon">▣</span><small>الأرشيف</small></button>
-      <button data-route="account" class="nav-item"><span class="nav-icon">●</span><small>حسابي</small></button>
-      <button data-route="menu" class="nav-item"><span class="nav-icon">☰</span><small>المزيد</small></button>
+      <button data-route="home" class="nav-item active" aria-label="الرئيسية"><span class="nav-icon svg-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></span><small>الرئيسية</small></button>
+      <button data-route="plans" class="nav-item" aria-label="الاشتراك"><span class="nav-icon svg-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m3 7 4 4 5-7 5 7 4-4-2 12H5z"/></svg></span><small>الاشتراك</small></button>
+      <button data-route="archive" class="nav-item" aria-label="الأرشيف"><span class="nav-icon svg-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16v13H4z"/><path d="M3 4h18v3H3zM9 11h6"/></svg></span><small>الأرشيف</small></button>
+      <button data-route="account" class="nav-item" aria-label="حسابي"><span class="nav-icon svg-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 21c.6-4 3.1-6 7.5-6s6.9 2 7.5 6"/></svg></span><small>حسابي</small></button>
+      <button data-route="menu" class="nav-item" aria-label="المزيد"><span class="nav-icon svg-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span><small>المزيد</small></button>
     </nav>
   </div>
   <div id="toast" class="toast" role="status"></div>
-  <script src="/miniapp/runtime.js?v=20260911-4"></script>
+  <script src="/miniapp/runtime.js?v=20260912-1"></script>
 </body>
 </html>
