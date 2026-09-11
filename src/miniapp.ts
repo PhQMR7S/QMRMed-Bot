@@ -94,7 +94,8 @@ export async function handleMiniAppRequest(req: IncomingMessage, res: ServerResp
   try {
     const url = new URL(req.url || '/', `http://${header(req, 'host') || 'localhost'}`);
     if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { ok: true, service: 'qmrmed-miniapp', time: new Date().toISOString() });
-    if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/miniapp')) return serveStatic('index.html', res);
+    if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/miniapp' || url.pathname === '/miniapp/')) return serveStatic('index.html', res);
+    if (req.method === 'GET' && (url.pathname === '/styles.css' || url.pathname === '/runtime.js')) return serveStatic(url.pathname.slice(1), res);
     if (req.method === 'GET' && url.pathname.startsWith('/miniapp/')) return serveStatic(url.pathname.slice('/miniapp/'.length), res);
     if (req.method !== 'GET') return json(res, 405, { error: 'Method not allowed' });
     const user = await auth(req);
