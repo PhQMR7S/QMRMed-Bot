@@ -1,13 +1,13 @@
-FROM node:22-bookworm-slim
+FROM node:24-bookworm-slim
 
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
 COPY . .
 
-RUN npm run build
+RUN npx prisma generate && npm run build
 
 ENV NODE_ENV=production
 ENV QMRMED_DISABLE_ARCHIVE_SYNC=1
