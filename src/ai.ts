@@ -78,6 +78,10 @@ function cleanAiAnswer(text: string) {
     .trim();
 }
 
+export function hasSufficientGroundedContext(context: string, minimumChars = 1_000) {
+  return context.trim().length >= minimumChars;
+}
+
 export async function answerMedicalQuestion(
   question: string,
   options?: {
@@ -98,8 +102,9 @@ export async function answerMedicalQuestion(
     subjectName: options?.subjectName,
   });
 
-  const trustedContext = formatRetrievedContext(driveItems, 12_000);
-  const webResults = trustedContext ? [] : await searchMedicalSources(question, undefined, 3);
+  const driveContext = formatRetrievedContext(driveItems, 12_000);
+  const useDriveContext = driveItems.length > 0 && hasSufficientGroundedContext(driveContext);
+  const webResults = useDriveContext ? [] : await searchMedicalSources(question, undefined, 3);
 
   const webContext = webResults.length
     ? (() => {
@@ -119,14 +124,16 @@ export async function answerMedicalQuestion(
       })()
     : '';
 
-  const context = trustedContext || webContext;
+  const context = useDriveContext ? driveContext : webContext;
   if (!context) {
     return 'لم أجد محتوى معتمدًا من QMRMed أو مصادر طبية ويب مناسبة مرتبطًا بسؤالك. جرّب كلمات أكثر تحديدًا أو غيّر القسم/المرحلة.';
   }
 
-  const sourceInstruction = trustedContext
+  const sourceInstruction = useDriveContext
     ? 'المصادر الأساسية التالية مسترجعة مباشرة من ملفات QMRMed المعتمدة في Google Drive. اعتمد عليها أولًا، ولا تستخدم الويب إذا كانت كافية.'
-    : 'لم نجد محتوى QMRMed محليًا كافيًا، لذلك استُخدمت نتائج بحث ويب طبية موثوقة. لا تخترع معلومات غير مدعومة بالسياق.';
+    : driveItems.length
+      ? 'وجدنا محتوى QMRMed محليًا لكنه غير كافٍ للإجابة، لذلك استُخدمت نتائج بحث ويب طبية موثوقة لاستكمال السياق. لا تخترع معلومات غير مدعومة بالسياق.'
+      : 'لم نجد محتوى QMRMed محليًا، لذلك استُخدمت نتائج بحث ويب طبية موثوقة. لا تخترع معلومات غير مدعومة بالسياق.';
 
   const answer = await routedChat(section, plan, [
     {
