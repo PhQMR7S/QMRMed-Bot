@@ -18,17 +18,17 @@ const EXCLUDED_PATH_SEGMENTS = new Set([
   '04 - rejected', '05 - temporary', '05 - duplicates', '04 - processed', '03 - needs review',
 ]);
 
-function normalizeFolderName(part: string) { return part.trim().replace(/^\d+\s*-\s*/, '').trim(); }
-function normalizedSegments(path: string) { return path.split('/').filter(Boolean).map(normalizeFolderName); }
-function shouldIndexPath(path: string) {
+export function normalizeFolderName(part: string) { return part.trim().replace(/^\d+\s*-\s*/, '').trim(); }
+export function normalizedSegments(path: string) { return path.split('/').filter(Boolean).map(normalizeFolderName); }
+export function shouldIndexPath(path: string) {
   const segments = path.split('/').filter(Boolean).slice(0, -1).map((part) => part.trim().toLocaleLowerCase());
   return !segments.some((segment) => EXCLUDED_PATH_SEGMENTS.has(segment));
 }
-function isKindFolder(part: string) {
+export function isKindFolder(part: string) {
   const normalized = normalizeFolderName(part).toLocaleLowerCase();
   return KIND_FOLDER_NAMES.has(normalized) || normalized.includes('ministerial') || normalized.includes('وزاري') || normalized.includes('وزاريات') || normalized.includes('question bank') || normalized.includes('بنك الأسئلة') || normalized.includes('shared references');
 }
-function contentKind(path: string): ContentKind | null {
+export function contentKind(path: string): ContentKind | null {
   const segments = normalizedSegments(path).slice(0, -1).map((part) => part.toLocaleLowerCase());
   if (segments.some((part) => part.includes('ministerial') || part.includes('وزاري') || part.includes('وزاريات'))) return 'MINISTERIAL';
   if (segments.some((part) => part === 'question bank' || part === 'questions' || part.includes('بنك الأسئلة') || part === 'الأسئلة')) return 'QUESTION';
@@ -40,7 +40,7 @@ export function normalizeStage(part: string) {
   const match = part.match(/(?:stage|year|مرحلة|سنة)\s*[-_ ]*(\d+)/i);
   return match?.[1] ?? null;
 }
-function metadataFromPath(path: string) {
+export function metadataFromPath(path: string) {
   const parts = normalizedSegments(path).slice(0, -1);
   const normalized = parts.map((part) => DEPARTMENTS[part.toLocaleLowerCase()] ?? part);
   const departmentIndex = normalized.findIndex((part) => Object.values(DEPARTMENTS).includes(part));
@@ -52,7 +52,8 @@ function metadataFromPath(path: string) {
   const subjectName = kindIndex > 0 && kindFolder !== 'shared references' ? normalized[kindIndex - 1] : null;
   return { department, stage, subjectName };
 }
-function chunkText(text: string, size: number) {
+export function chunkText(text: string, size: number) {
+  if (!Number.isFinite(size) || size <= 0) throw new Error('Chunk size must be greater than zero');
   const normalized = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   if (!normalized) return [];
   const chunks: string[] = [];
