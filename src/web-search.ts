@@ -7,6 +7,19 @@ export type WebSearchResult = {
   source?: string;
 };
 
+type FirecrawlSearchItem = {
+  url?: unknown;
+  title?: unknown;
+  description?: unknown;
+};
+
+type FirecrawlResponse = {
+  data?: {
+    web?: FirecrawlSearchItem[];
+    markdown?: unknown;
+  };
+};
+
 const TRUSTED_MEDICAL_DOMAINS = [
   'who.int',
   'pubmed.ncbi.nlm.nih.gov',
@@ -19,21 +32,23 @@ const TRUSTED_MEDICAL_DOMAINS = [
   'merckmanuals.com',
   'msdmanuals.com',
   'mayoclinic.org',
-];
+] as const;
 
-function isTrustedUrl(value: string) {
+export function isTrustedMedicalUrl(value: string) {
   try {
-    const hostname = new URL(value).hostname.toLowerCase().replace(/^www\./, '');
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'https:') return false;
+    const hostname = parsed.hostname.toLowerCase().replace(/^www\./, '');
     return TRUSTED_MEDICAL_DOMAINS.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
   } catch {
     return false;
   }
 }
 
-function cleanMarkdown(value: string, maxChars: number) {
+export function cleanMedicalMarkdown(value: string, maxChars: number) {
   const withoutNoise = value
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
     .replace(/<[^>]+>/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -47,10 +62,10 @@ function cleanMarkdown(value: string, maxChars: number) {
     const index = trimmed.indexOf(marker);
     if (index > 500) end = Math.min(end, index);
   }
-  return trimmed.slice(0, Math.min(end, maxChars)).trim();
+  return trimmed.slice(0, Math.max(0, maxChars)).slice(0, end).trim();
 }
 
-async function firecrawl(path: string, body: unknown) {
+async function firecrawl(path: string, body: unknown): Promise<FirecrawlResponse> {
   if (!config.FIRECRAWL_API_KEY) throw new Error('FIRECRAWL_API_KEY is not configured');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), config.FIRECRAWL_SEARCH_TIMEOUT_MS);
@@ -66,7 +81,7 @@ async function firecrawl(path: string, body: unknown) {
     });
     const raw = await response.text();
     if (!response.ok) throw new Error(`Firecrawl ${response.status}: ${raw.slice(0, 400)}`);
-    return JSON.parse(raw) as Record<string, any>;
+    return JSON.parse(raw) as FirecrawlResponse;
   } finally {
     clearTimeout(timer);
   }
@@ -79,9 +94,16 @@ export async function searchMedicalWeb(query: string, limit = config.FIRECRAWL_S
     limit: Math.min(Math.max(limit, 1), 10),
   });
   const results = Array.isArray(data.data?.web) ? data.data.web : [];
+  const seen = new Set<string>();
   return results
-    .filter((item: any) => typeof item?.url === 'string' && isTrustedUrl(item.url))
-    .map((item: any) => ({
+    .filter((item): item is FirecrawlSearchItem & { url: string } => {
+      if (typeof item?.url !== 'string' || !isTrustedMedicalUrl(item.url)) return false;
+      const normalized = item.url.replace(/#.*$/, '');
+      if (seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    })
+    .map((item) => ({
       title: typeof item.title === 'string' && item.title.trim() ? item.title.trim() : item.url,
       url: item.url,
       content: typeof item.description === 'string' ? item.description.trim() : '',
@@ -89,10 +111,10 @@ export async function searchMedicalWeb(query: string, limit = config.FIRECRAWL_S
 }
 
 export async function scrapeMedicalPage(url: string, maxChars = 12_000): Promise<WebSearchResult | null> {
-  if (!isTrustedUrl(url) || config.WEB_SEARCH_PROVIDER !== 'firecrawl' || !config.FIRECRAWL_API_KEY) return null;
+  if (!isTrustedMedicalUrl(url) || config.WEB_SEARCH_PROVIDER !== 'firecrawl' || !config.FIRECRAWL_API_KEY) return null;
   const data = await firecrawl('/v2/scrape', { url, formats: ['markdown'] });
   const markdown = typeof data.data?.markdown === 'string' ? data.data.markdown : '';
-  const content = cleanMarkdown(markdown, maxChars);
+  const content = cleanMedicalMarkdown(markdown, maxChars);
   if (!content) return null;
   return { title: url, url, content, source: new URL(url).hostname.replace(/^www\./, '') };
 }
