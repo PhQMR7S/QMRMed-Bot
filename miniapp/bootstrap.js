@@ -14,6 +14,11 @@
     button.click();
     return true;
   };
+
+  // app.js owns the actual rendering. Initialize it explicitly because the
+  // standalone Mini App is also opened directly by its public URL.
+  if (typeof window.render === 'function') window.render();
+
   if (!activateRoute()) {
     const observer = new MutationObserver(() => { if (activateRoute()) observer.disconnect(); });
     observer.observe(document.getElementById('app'), { childList: true, subtree: true });
