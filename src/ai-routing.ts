@@ -3,40 +3,27 @@ import { config } from './config.js';
 import { omniChat, type AIMessage } from './omni-client.js';
 
 export type { AIMessage } from './omni-client.js';
-
 export type AISection = 'study' | 'cases' | 'questions' | 'ministerial' | 'exams' | 'search' | 'admin';
-
-const modelGroups: Record<AISection, string | undefined> = {
-  study: config.OMNIROUTE_GROUP_STUDY,
-  cases: config.OMNIROUTE_GROUP_CASES,
-  questions: config.OMNIROUTE_GROUP_QUESTIONS,
-  ministerial: config.OMNIROUTE_GROUP_MINISTERIAL,
-  exams: config.OMNIROUTE_GROUP_EXAMS,
-  search: config.OMNIROUTE_GROUP_SEARCH,
-  admin: config.OMNIROUTE_GROUP_ADMIN,
-};
-
+type GroupKey = 'DEFAULT' | 'STUDY' | 'CASES' | 'QUESTIONS' | 'MINISTERIAL' | 'EXAMS' | 'SEARCH' | 'ADMIN';
+const sectionGroupKey: Record<AISection, GroupKey> = { study:'STUDY', cases:'CASES', questions:'QUESTIONS', ministerial:'MINISTERIAL', exams:'EXAMS', search:'SEARCH', admin:'ADMIN' };
+function configuredGroup(key: GroupKey): string | undefined {
+  const envValue = process.env[`OMNIROUTE_GROUP_${key}`]?.trim();
+  if (envValue) return envValue;
+  const value = config[`OMNIROUTE_GROUP_${key}` as keyof typeof config];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
 export function selectModelGroup(section: AISection, plan: Plan) {
-  return modelGroups[section] ?? (plan === 'PRO' ? undefined : config.OMNIROUTE_GROUP_DEFAULT);
+  const sectionGroup = configuredGroup(sectionGroupKey[section]);
+  if (sectionGroup) return sectionGroup;
+  return plan === 'PRO' ? undefined : configuredGroup('DEFAULT');
 }
-
 export async function routedChat(section: AISection, plan: Plan, messages: AIMessage[], temperature = 0.2) {
-  const model = selectModelGroup(section, plan);
-  return omniChat(messages, { model, temperature });
+  return omniChat(messages, { model: selectModelGroup(section, plan), temperature });
 }
-
 export function aiRoutingSummary() {
   return {
     url: config.OMNIROUTE_URL,
     defaultModel: config.OMNIROUTE_MODEL,
-    groups: {
-      study: config.OMNIROUTE_GROUP_STUDY ?? config.OMNIROUTE_MODEL,
-      cases: config.OMNIROUTE_GROUP_CASES ?? config.OMNIROUTE_MODEL,
-      questions: config.OMNIROUTE_GROUP_QUESTIONS ?? config.OMNIROUTE_MODEL,
-      ministerial: config.OMNIROUTE_GROUP_MINISTERIAL ?? config.OMNIROUTE_MODEL,
-      exams: config.OMNIROUTE_GROUP_EXAMS ?? config.OMNIROUTE_MODEL,
-      search: config.OMNIROUTE_GROUP_SEARCH ?? config.OMNIROUTE_MODEL,
-      admin: config.OMNIROUTE_GROUP_ADMIN ?? config.OMNIROUTE_MODEL,
-    },
+    groups: Object.fromEntries((Object.keys(sectionGroupKey) as AISection[]).map((section) => [section, selectModelGroup(section, 'FREE') ?? config.OMNIROUTE_MODEL])),
   };
 }
