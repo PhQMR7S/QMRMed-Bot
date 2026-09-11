@@ -16,6 +16,17 @@ test('Mini App has a visible loading shell before JavaScript runs', async () => 
   assert.match(html, /data-route="archive"/, 'archive navigation must exist');
 });
 
+test('Mini App uses accessible vector icons instead of Unicode glyph placeholders', async () => {
+  const html = await text('miniapp/index.html');
+  assert.match(html, /data-route="home"[\s\S]*?<svg[^>]*>[\s\S]*?<path/, 'home must use an SVG icon');
+  assert.match(html, /data-route="plans"[\s\S]*?<svg[^>]*>[\s\S]*?<path/, 'subscription must use an SVG icon');
+  assert.match(html, /data-route="archive"[\s\S]*?<svg[^>]*>[\s\S]*?<path/, 'archive must use an SVG icon');
+  assert.match(html, /data-route="account"[\s\S]*?<svg[^>]*>[\s\S]*?<circle/, 'account must use an SVG icon');
+  assert.match(html, /data-route="menu"[\s\S]*?<svg[^>]*>[\s\S]*?<path/, 'more must use an SVG icon');
+  assert.doesNotMatch(html, /[♛⌂▣●☰]/, 'navigation must not use Unicode icon placeholders');
+  assert.match(html, /aria-hidden="true"/, 'decorative icons must be hidden from screen readers');
+});
+
 test('Mini App loads runtime and keeps the shell independent of API readiness', async () => {
   const html = await text('miniapp/index.html');
   const runtime = await text('miniapp/runtime.js');
@@ -34,11 +45,11 @@ test('Mini App loads runtime and keeps the shell independent of API readiness', 
   assert.match(runtime, /photoUrl/, 'runtime must render the backend profile photo');
 });
 
-test('Back4App has a deterministic Docker build definition', async () => {
+test('Docker build uses the project Node runtime family', async () => {
   const dockerfile = await text('Dockerfile');
-  assert.match(dockerfile, /^FROM node:22-/m, 'Dockerfile must pin Node 22 runtime family');
-  assert.match(dockerfile, /npm install/, 'Dockerfile must install dependencies');
+  assert.match(dockerfile, /^FROM node:24-/m, 'Dockerfile must use the project Node 24 runtime family');
+  assert.match(dockerfile, /npm ci/, 'Dockerfile must install from the lockfile');
   assert.match(dockerfile, /npm run build/, 'Dockerfile must build TypeScript before startup');
-  assert.match(dockerfile, /EXPOSE 8080/, 'Dockerfile must document Back4App HTTP port');
+  assert.match(dockerfile, /EXPOSE 8080/, 'Dockerfile must document the HTTP port');
   assert.match(dockerfile, /start:miniapp/, 'Dockerfile must start the standalone Mini App');
 });
