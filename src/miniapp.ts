@@ -11,56 +11,71 @@ const MINI_APP_PORT = Number(process.env.MINI_APP_PORT || 3000);
 const MINI_APP_HOST = process.env.MINI_APP_HOST || '127.0.0.1';
 const STATIC_ROOT = resolve(process.cwd(), 'miniapp');
 const ARCHIVE_ROOT = resolve(process.cwd(), '.qmrmed', 'file-ai');
-const MAX_INIT_AGE_SECONDS = 24 * 60 * 60;
+const MAX_INIT_AGE_SECONDS = 60 * 60;
 const operationLabels: Record<string, string> = { explain:'شرح المحاضرة',summary:'تلخيص دقيق',qa:'أسئلة قصيرة',mcq:'MCQ',true_false:'صح / خطأ',fill_blank:'أكمل الفراغ',matching:'مطابقة',cases:'حالات سريرية',viva:'Viva / شفوي',mind_map:'خريطة ذهنية',flowchart:'مخطط انسيابي',comparison:'جدول مقارنة',timeline:'خط زمني',diagnostic:'خوارزمية تشخيصية',exam:'اختبار تجريبي' };
 
-function json(res: ServerResponse, status: number, data: unknown) { const body=JSON.stringify(data); res.writeHead(status, {'content-type':'application/json; charset=utf-8','cache-control':'no-store'}); res.end(body); }
+function json(res: ServerResponse, status: number, data: unknown) { const body=JSON.stringify(data); res.writeHead(status, {'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}); res.end(body); }
 function header(req: IncomingMessage, name: string) { const value=req.headers[name.toLowerCase()]; return Array.isArray(value)?value[0]:value || ''; }
 function validateInitData(initData: string): TelegramUser {
-  if (!initData || !config.BOT_TOKEN) throw new Error('Telegram session missing');
-  const params=new URLSearchParams(initData); const received=params.get('hash'); if(!received) throw new Error('Invalid Telegram session');
+  if (!initData || !config.BOT_TOKEN) throw new Error('AUTH_MISSING');
+  const params=new URLSearchParams(initData); const received=params.get('hash'); if(!received || !/^[a-f0-9]{64}$/i.test(received)) throw new Error('AUTH_INVALID');
   params.delete('hash'); const dataCheck=Array.from(params.entries()).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>`${k}=${v}`).join('\n');
   const secret=createHmac('sha256','WebAppData').update(config.BOT_TOKEN).digest();
   const expected=createHmac('sha256',secret).update(dataCheck).digest('hex');
-  const a=Buffer.from(received,'hex'), b=Buffer.from(expected,'hex'); if(a.length!==b.length || !timingSafeEqual(a,b)) throw new Error('Invalid Telegram signature');
-  const authDate=Number(params.get('auth_date')||0); if(!authDate || Math.floor(Date.now()/1000)-authDate>MAX_INIT_AGE_SECONDS) throw new Error('Telegram session expired');
-  const raw=params.get('user'); if(!raw) throw new Error('Telegram user missing');
-  return JSON.parse(raw) as TelegramUser;
+  const a=Buffer.from(received,'hex'), b=Buffer.from(expected,'hex'); if(a.length!==b.length || !timingSafeEqual(a,b)) throw new Error('AUTH_INVALID');
+  const authDate=Number(params.get('auth_date')||0); const now=Math.floor(Date.now()/1000); if(!Number.isSafeInteger(authDate) || authDate<=0 || authDate>now+60 || now-authDate>MAX_INIT_AGE_SECONDS) throw new Error('AUTH_EXPIRED');
+  const raw=params.get('user'); if(!raw) throw new Error('AUTH_USER_MISSING');
+  try { const user=JSON.parse(raw) as TelegramUser; if(!Number.isSafeInteger(user.id) || user.id<=0) throw new Error(); return user; } catch { throw new Error('AUTH_USER_MISSING'); }
 }
-export function miniAppErrorStatus(error: unknown) {
-  const message=error instanceof Error?error.message:'';
-  return /^(Telegram session missing|Invalid Telegram session|Invalid Telegram signature|Telegram session expired|Telegram user missing)$/.test(message) ? 401 : 500;
-}
-async function auth(req: IncomingMessage) { const user=validateInitData(header(req,'x-telegram-init-data')); return upsertTelegramUser(user); }
+export function miniAppErrorStatus(error: unknown) { const message=error instanceof Error?error.message:''; return message.startsWith('AUTH_') ? 401 : 500; }
+async function auth(req: IncomingMessage) { return upsertTelegramUser(validateInitData(header(req,'x-telegram-init-data'))); }
 function safeUserDir(userId: string) { return resolve(ARCHIVE_ROOT,userId.replace(/[^a-zA-Z0-9_-]/g,'_')); }
-async function archiveFor(userId: string) { const dir=safeUserDir(userId); await mkdir(dir,{recursive:true}); const names=(await readdir(dir)).filter(n=>n.endsWith('.json')).sort().reverse().slice(0,50); const items:any[]=[]; for(const name of names){try{const item=JSON.parse(await readFile(join(dir,name),'utf8')); items.push({id:item.id,sourceName:item.sourceName,operation:item.operation,operationLabel:operationLabels[item.operation]||item.operation,createdAt:item.createdAt?new Date(item.createdAt).toLocaleString('ar-IQ'):'-',hasResult:Boolean(item.result)});}catch{}} return items; }
-async function archiveDetail(userId:string,id:string){if(!/^[a-zA-Z0-9_-]+$/.test(id)) return null; const dir=safeUserDir(userId); const file=resolve(dir,`${id}.json`); if(!file.startsWith(dir+'/')) return null; try{return JSON.parse(await readFile(file,'utf8'));}catch{return null;}}
+async function localArchiveFor(userId: string) { const dir=safeUserDir(userId); try { await mkdir(dir,{recursive:true}); const names=(await readdir(dir)).filter(n=>n.endsWith('.json')).sort().reverse().slice(0,50); const items:any[]=[]; for(const name of names){try{const item=JSON.parse(await readFile(join(dir,name),'utf8'));items.push({id:item.id,sourceName:item.sourceName,operation:item.operation,operationLabel:operationLabels[item.operation]||item.operation,createdAt:item.createdAt||null,hasResult:Boolean(item.result)});}catch{}} return items; } catch { return []; } }
+async function localArchiveDetail(userId:string,id:string){if(!/^[a-zA-Z0-9_-]+$/.test(id)) return null; const dir=safeUserDir(userId); const file=resolve(dir,`${id}.json`); if(!file.startsWith(dir+'/')) return null; try{return JSON.parse(await readFile(file,'utf8'));}catch{return null;}}
+async function archiveFor(userId:number,telegramId:string) {
+  const rows=await db.fileAiArchive.findMany({where:{userId},orderBy:{createdAt:'desc'},take:50,select:{id:true,sourceName:true,operation:true,createdAt:true,result:true}}).catch(()=>[]);
+  if(rows.length) return rows.map(x=>({id:x.id,sourceName:x.sourceName,operation:x.operation,operationLabel:operationLabels[x.operation]||x.operation,createdAt:x.createdAt.toISOString(),hasResult:Boolean(x.result)}));
+  return localArchiveFor(telegramId);
+}
+async function archiveDetail(userId:number,telegramId:string,id:string) {
+  if(!/^[a-zA-Z0-9_-]+$/.test(id)) return null;
+  const row=await db.fileAiArchive.findFirst({where:{id,userId},select:{id:true,sourceName:true,operation:true,createdAt:true,result:true}}).catch(()=>null);
+  if(row) return {id:row.id,sourceName:row.sourceName,operation:row.operation,operationLabel:operationLabels[row.operation]||row.operation,createdAt:row.createdAt.toISOString(),result:row.result};
+  const item=await localArchiveDetail(telegramId,id); if(!item)return null;
+  return {id:item.id,sourceName:item.sourceName,operation:item.operation,operationLabel:operationLabels[item.operation]||item.operation,createdAt:item.createdAt||null,result:item.result||''};
+}
+function subscriptionState(user:any, active:any, now=new Date()) {
+  if(active) return {status:'ACTIVE',label:'فعال',plan:active.plan,startsAt:active.startsAt.toISOString(),endsAt:active.endsAt.toISOString(),daysRemaining:Math.max(0,Math.ceil((active.endsAt.getTime()-now.getTime())/86400000))};
+  if(user.trialEndsAt && user.trialEndsAt>now) return {status:'TRIAL',label:'تجربة مجانية',plan:'FREE',startsAt:user.trialStartedAt?.toISOString()||null,endsAt:user.trialEndsAt.toISOString(),daysRemaining:Math.max(0,Math.ceil((user.trialEndsAt.getTime()-now.getTime())/86400000))};
+  return {status:'FREE',label:'مجاني',plan:'FREE',startsAt:null,endsAt:null,daysRemaining:0};
+}
+function miniAppRouteLink(route:string) { if(!config.MINI_APP_URL)return null; try { const u=new URL(config.MINI_APP_URL); u.searchParams.set('route',route); return u.toString(); } catch { return null; } }
+function botDeepLink(start:string) { if(!config.MINI_APP_BOT_USERNAME)return null; const username=config.MINI_APP_BOT_USERNAME.replace(/^@/,''); return `https://t.me/${username}?start=${encodeURIComponent(start)}`; }
 async function handle(req:IncomingMessage,res:ServerResponse){
-  try{
+  try {
     const url=new URL(req.url||'/',`http://${header(req,'host')||'localhost'}`);
     if(req.method==='GET' && (url.pathname==='/' || url.pathname==='/miniapp')) return serveStatic('index.html',res);
     if(req.method==='GET' && url.pathname.startsWith('/miniapp/')) return serveStatic(url.pathname.slice('/miniapp/'.length),res);
     if(req.method!=='GET') return json(res,405,{error:'Method not allowed'});
     const user=await auth(req);
     if(url.pathname==='/api/me'){
+      const now=new Date();
       const [completed,attempts,correct,archive,active]=await Promise.all([
-        db.progress.count({where:{userId:user.id,completed:true}}),db.attempt.count({where:{userId:user.id}}),db.attempt.count({where:{userId:user.id,correct:true}}),archiveFor(String(user.telegramId)),
-        db.subscription.findFirst({where:{userId:user.id,active:true,endsAt:{gt:new Date()}},orderBy:{endsAt:'desc'}})
+        db.progress.count({where:{userId:user.id,completed:true}}),db.attempt.count({where:{userId:user.id}}),db.attempt.count({where:{userId:user.id,correct:true}}),archiveFor(user.id,String(user.telegramId)),
+        db.subscription.findFirst({where:{userId:user.id,active:true,startsAt:{lte:now},endsAt:{gt:now}},orderBy:{endsAt:'desc'},select:{plan:true,startsAt:true,endsAt:true}})
       ]);
-      return json(res,200,{id:user.id,telegramId:user.telegramId,username:user.username,firstName:user.firstName,lastName:user.lastName,department:user.department,stage:user.stage,plan:user.plan,trialUsed:user.trialUsed,trialEndsAt:user.trialEndsAt,subscriptionEndsAt:active?.endsAt?.toLocaleDateString('ar-IQ')||null,archiveCount:archive.length,progress:{completed,attempts,correct,accuracy:attempts?Math.round(correct/attempts*100):0}});
+      const subscription=subscriptionState(user,active,now);
+      return json(res,200,{id:user.id,telegramId:user.telegramId,username:user.username,firstName:user.firstName,lastName:user.lastName,department:user.department,stage:user.stage,plan:subscription.plan,accountPlan:user.plan,trialUsed:user.trialUsed,trialEndsAt:user.trialEndsAt,subscription,archiveCount:archive.length,progress:{completed,attempts,correct,accuracy:attempts?Math.round(correct/attempts*100):0},links:{miniapp:{home:miniAppRouteLink('home'),plans:miniAppRouteLink('plans'),subscription:miniAppRouteLink('subscription'),archive:miniAppRouteLink('archive'),account:miniAppRouteLink('account')},bot:{home:botDeepLink('home'),plans:botDeepLink('plans'),archive:botDeepLink('archive')}}});
     }
-    if(url.pathname==='/api/plans'){
-      return json(res,200,[
-        {code:'FREE',name:'Free',icon:'🎁',subtitle:'البداية الأساسية مع تجربة QMRMed.',current:user.plan==='FREE',features:['تجربة المنصة التعليمية','الوصول إلى المحتوى المجاني','تجربة الذكاء الاصطناعي حسب سياسة المنصة','الحساب والأرشيف الشخصي']},
-        {code:'PLUS',name:'PLUS',icon:'💙',subtitle:'Everything in Free, plus:',current:user.plan==='PLUS',features:[`PLUS — ${config.PLUS_MONTH_STARS}⭐ / شهر`,`PLUS — ${config.PLUS_5MONTH_STARS}⭐ / 5 أشهر`,`PLUS — ${config.PLUS_YEAR_STARS}⭐ / سنة`,'حدود AI أعلى','ميزات تعليمية موسعة','أرشيف موسع']},
-        {code:'PRO',name:'PRO',icon:'💜',subtitle:'Everything in PLUS, plus:',current:user.plan==='PRO',features:[`PRO — ${config.PRO_MONTH_STARS}⭐ / شهر`,`PRO — ${config.PRO_5MONTH_STARS}⭐ / 5 أشهر`,`PRO — ${config.PRO_YEAR_STARS}⭐ / سنة`,'أولوية أعلى للذكاء الاصطناعي','ميزات متقدمة','أعلى حدود للاستخدام والأرشيف']}
-      ]);
-    }
-    if(url.pathname==='/api/archive') return json(res,200,await archiveFor(String(user.telegramId)));
-    if(url.pathname.startsWith('/api/archive/')){const id=decodeURIComponent(url.pathname.slice('/api/archive/'.length));const item=await archiveDetail(String(user.telegramId),id);if(!item)return json(res,404,{error:'النتيجة غير موجودة'});return json(res,200,{id:item.id,sourceName:item.sourceName,operation:item.operation,operationLabel:operationLabels[item.operation]||item.operation,createdAt:item.createdAt,result:item.result||''});}
+    if(url.pathname==='/api/plans') return json(res,200,[
+      {code:'FREE',name:'Free',icon:'🎁',current:user.plan==='FREE'&&!user.trialEndsAt,features:['تجربة المنصة التعليمية','الوصول إلى المحتوى المجاني','تجربة الذكاء الاصطناعي حسب سياسة المنصة','الحساب والأرشيف الشخصي'],prices:{}},
+      {code:'PLUS',name:'PLUS',icon:'💙',current:user.plan==='PLUS',features:['حدود AI أعلى','ميزات تعليمية موسعة','أرشيف موسع'],prices:{month:config.PLUS_MONTH_STARS,fiveMonths:config.PLUS_5MONTH_STARS,year:config.PLUS_YEAR_STARS}},
+      {code:'PRO',name:'PRO',icon:'💜',current:user.plan==='PRO',features:['أولوية أعلى للذكاء الاصطناعي','ميزات متقدمة','أعلى حدود للاستخدام والأرشيف'],prices:{month:config.PRO_MONTH_STARS,fiveMonths:config.PRO_5MONTH_STARS,year:config.PRO_YEAR_STARS}}
+    ]);
+    if(url.pathname==='/api/archive') return json(res,200,await archiveFor(user.id,String(user.telegramId)));
+    if(url.pathname.startsWith('/api/archive/')){const id=decodeURIComponent(url.pathname.slice('/api/archive/'.length));const item=await archiveDetail(user.id,String(user.telegramId),id);if(!item)return json(res,404,{error:'النتيجة غير موجودة'});return json(res,200,item);}
     return json(res,404,{error:'Not found'});
-  }catch(error){console.error('Mini App error:',error);return json(res,miniAppErrorStatus(error),{error:error instanceof Error?error.message:'تعذر معالجة الطلب'});}
+  } catch(error) { console.error('Mini App error:',error); const status=miniAppErrorStatus(error); return json(res,status,{error:status===401?'جلسة Telegram غير صالحة أو منتهية. افتح Mini App من داخل Telegram مجددًا.':'تعذر تحميل بيانات Mini App حاليًا.'}); }
 }
-async function serveStatic(relative:string,res:ServerResponse){const safe=resolve(STATIC_ROOT,relative);if(!safe.startsWith(STATIC_ROOT+'/') && safe!==STATIC_ROOT)return json(res,404,{error:'Not found'});const ext=extname(safe);const type=ext==='.html'?'text/html; charset=utf-8':ext==='.css'?'text/css; charset=utf-8':ext==='.js'?'text/javascript; charset=utf-8':'application/octet-stream';try{res.writeHead(200,{'content-type':type,'cache-control':'no-cache'});createReadStream(safe).pipe(res).on('error',()=>res.end());}catch{json(res,404,{error:'Not found'});}}
-
+async function serveStatic(relative:string,res:ServerResponse){const safe=resolve(STATIC_ROOT,relative);if(!safe.startsWith(STATIC_ROOT+'/')&&safe!==STATIC_ROOT)return json(res,404,{error:'Not found'});const ext=extname(safe);const type=ext==='.html'?'text/html; charset=utf-8':ext==='.css'?'text/css; charset=utf-8':ext==='.js'?'text/javascript; charset=utf-8':'application/octet-stream';try{res.writeHead(200,{'content-type':type,'cache-control':ext==='.html'?'no-cache':'public, max-age=300','x-content-type-options':'nosniff','content-security-policy':"default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; frame-ancestors https://web.telegram.org https://*.telegram.org"});createReadStream(safe).pipe(res).on('error',()=>res.end());}catch{json(res,404,{error:'Not found'});}}
 export function startMiniApp(){const server=createServer(handle);server.listen(MINI_APP_PORT,MINI_APP_HOST,()=>console.log(`QMRMed Mini App listening on http://${MINI_APP_HOST}:${MINI_APP_PORT}`));return server;}
