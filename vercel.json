@@ -1,14 +1,13 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "functions": {
     "api/index.ts": {
-      "runtime": "nodejs22.x",
-      "includeFiles": ["miniapp/**"]
+      "runtime": "nodejs22.x"
     }
   },
   "routes": [
     { "src": "/api/(.*)", "dest": "/api/index.ts" },
-    { "src": "/miniapp(?:/(.*))?", "dest": "/api/index.ts" },
-    { "src": "/", "dest": "/api/index.ts" }
+    { "src": "/", "dest": "/miniapp/index.html" }
   ]
 }
