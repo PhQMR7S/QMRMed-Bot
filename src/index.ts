@@ -134,7 +134,19 @@ async function showExternalActivation(ctx: Context, plan: 'PLUS' | 'PRO', days: 
   return render(ctx, `👋 أهلًا بك في QMRMed\n\n📦 الخطة: ${plan}\n📅 المدة: ${duration}\n💵 المبلغ المطلوب: ${price}$\n\n💳 Mastercard: ${config.MASTERCARD_ACCOUNT}\n💵 Zain Cash: ${config.ZAINCASH_NUMBER}\n\n📋 تعليمات الاشتراك والتفعيل:\n1️⃣ أرسل المبلغ كاملًا إلى Mastercard أو Zain Cash أعلاه.\n2️⃣ خذ صورة واضحة لإيصال الدفع واحتفظ بها.\n3️⃣ تواصل مع ${config.SUPPORT_HANDLE || '@ID29i'} وأرسل صورة الإيصال مع الخطة والمدة.\n4️⃣ عند طلب الدعم، أرسل Telegram ID الخاص بك للتأكد من الحساب الصحيح.\n5️⃣ سيتم التحقق يدويًا من المبلغ والإيصال.\n6️⃣ بعد التأكد، سيرسل لك الدعم كود التفعيل.\n7️⃣ ارجع إلى QMRMed واضغط «🎟️ إدخال كود التفعيل» وأرسل الكود.\n8️⃣ سيتحقق النظام من صحة الكود وحالته ومدة الاشتراك وعدد مرات استخدامه وصلاحيته، ثم يفعّل الاشتراك تلقائيًا إذا كان صالحًا.\n\n⚠️ الدفع الخارجي لا يفعّل الاشتراك تلقائيًا. لا تعتبر العملية مكتملة حتى يؤكد لك الدعم التحقق منها.\n🔐 لا ترسل كلمات مرور أو رموز تسجيل الدخول أو أي بيانات حساسة.`, new InlineKeyboard().text('🎟️ إدخال كود التفعيل', 'redeem_code').row().text('🆘 التواصل مع الدعم', 'manual:support').row().text('⬅️ طرق الدفع', 'payment_methods').row().text('🏠 الرئيسية', 'home'));
 }
 
-bot.command('start', async ctx => { const user = await getUser(ctx); if (config.TRIAL_ENABLED && !user.trialUsed) await ensureTrial(user.id); await home(ctx); });
+bot.command('start', async ctx => {
+  const user = await getUser(ctx);
+  if (config.TRIAL_ENABLED && !user.trialUsed) await ensureTrial(user.id);
+  const payload = typeof ctx.match === 'string' ? ctx.match.trim().toLowerCase() : '';
+  if (payload === 'plans' || payload === 'subscription' || payload === 'subscribe') {
+    return ctx.reply('💎 اشتراكات QMRMed\n\nاختر الخطة والمدة من الواجهة الحالية داخل البوت:', { reply_markup: plansMenu() });
+  }
+  if (payload === 'activation' || payload === 'activate' || payload === 'redeem') {
+    pending.set(userKey(ctx), 'activation_code');
+    return ctx.reply('🎟️ تفعيل الاشتراك\n\nأرسل كود التفعيل الذي استلمته من دعم QMRMed. سيتم التحقق من صحة الكود وحالته ومدته واستخداماته وصلاحيته قبل التفعيل.', { reply_markup: cancelMenu });
+  }
+  return home(ctx);
+});
 bot.command('help', async ctx => ctx.reply('📖 أوامر QMRMed\n\n/start — الرئيسية\n/help — المساعدة\n/study — وضع الدراسة\n/search — البحث\n/ai — المساعد الذكي\n/questions — بنك الأسئلة\n/ministerial — الوزاريات\n/exams — الاختبارات\n/progress — تقدمي\n/plans — الاشتراك\n/trial — التجربة\n/redeem — تفعيل كود\n/account — حسابي\n/settings — الإعدادات\n/about — عن QMRMed\n/terms — الشروط\n/paysupport — دعم الدفع\n/cancel — إلغاء\n/admin — الإدارة'));
 bot.command('study', async ctx => ctx.reply('🎯 اختر القسم الدراسي:', { reply_markup: studyDepartmentMenu() }));
 bot.command('search', async ctx => { pending.set(userKey(ctx), 'search'); await ctx.reply('🔎 أرسل كلمة أو عبارة للبحث داخل محتوى QMRMed المعتمد فقط.', { reply_markup: backMenu }); });

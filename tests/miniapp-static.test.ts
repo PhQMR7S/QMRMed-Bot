@@ -8,10 +8,10 @@ async function text(path: string) {
   return readFile(new URL(path, root), 'utf8');
 }
 
-test('Mini App has a visible server-side fallback before JavaScript runs', async () => {
+test('Mini App has a visible loading shell before JavaScript runs', async () => {
   const html = await text('miniapp/index.html');
-  assert.match(html, /<main id="view"[^>]*>\s*<section class="hero">/, 'home content must exist in HTML');
-  assert.match(html, /مرحباً بك/, 'fallback must show a welcome state');
+  assert.match(html, /<main id="view"[^>]*>\s*<div class="loading">/, 'loading shell must exist in HTML');
+  assert.doesNotMatch(html, /QMR7S|Telegram user|plan-pill/, 'HTML shell must not contain fake account data');
   assert.match(html, /data-route="plans"/, 'subscription navigation must exist');
   assert.match(html, /data-route="archive"/, 'archive navigation must exist');
 });
@@ -30,6 +30,8 @@ test('Mini App loads runtime and keeps the shell independent of API readiness', 
   assert.match(runtime, /api\('\/api\/plans'\)/, 'runtime must load plans');
   assert.match(runtime, /api\('\/api\/archive'\)/, 'runtime must load the archive');
   assert.match(runtime, /loadArchiveDetail/, 'runtime must open an archive result');
+  assert.match(runtime, /data-retry/, 'runtime must expose retry states');
+  assert.match(runtime, /photoUrl/, 'runtime must render the backend profile photo');
 });
 
 test('Back4App has a deterministic Docker build definition', async () => {
