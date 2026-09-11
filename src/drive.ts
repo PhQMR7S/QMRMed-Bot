@@ -31,7 +31,6 @@ function serviceAccount(): ServiceAccount {
   }
 }
 
-/** Accept either a raw Drive folder ID or a standard Drive folder URL. */
 export function normalizeDriveFolderId(value: string): string {
   const trimmed = value.trim();
   const match = trimmed.match(/^https?:\/\/drive\.google\.com\/drive\/folders\/([^/?#]+)/i);
@@ -42,6 +41,8 @@ export function normalizeDriveFolderId(value: string): string {
 function base64Url(value: string | Buffer) {
   return Buffer.from(value).toString('base64url');
 }
+
+const REQUEST_TIMEOUT_MS = Math.max(5_000, Number(process.env.GOOGLE_DRIVE_REQUEST_TIMEOUT_MS ?? 20_000));
 
 async function accessToken() {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.value;
@@ -61,24 +62,38 @@ async function accessToken() {
   signer.end();
   const assertion = `${unsigned}.${signer.sign(account.private_key).toString('base64url')}`;
 
-  const response = await fetch(account.token_uri ?? 'https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
-  });
+  console.log('  Authenticating Google service account...');
+  let response: Response;
+  try {
+    response = await fetch(account.token_uri ?? 'https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    throw new Error(`Google OAuth request failed or timed out after ${REQUEST_TIMEOUT_MS}ms: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const raw = await response.text();
   if (!response.ok) throw new Error(`Google OAuth ${response.status}: ${raw.slice(0, 500)}`);
   const token = JSON.parse(raw) as TokenResponse;
   cachedToken = { value: token.access_token, expiresAt: Date.now() + token.expires_in * 1000 };
+  console.log('  Google authentication successful.');
   return token.access_token;
 }
 
 async function driveFetch(path: string, init?: RequestInit) {
   const token = await accessToken();
-  const response = await fetch(`https://www.googleapis.com/drive/v3${path}`, {
-    ...init,
-    headers: { authorization: `Bearer ${token}`, ...(init?.headers ?? {}) },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`https://www.googleapis.com/drive/v3${path}`, {
+      ...init,
+      headers: { authorization: `Bearer ${token}`, ...(init?.headers ?? {}) },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    throw new Error(`Google Drive request failed or timed out after ${REQUEST_TIMEOUT_MS}ms: ${error instanceof Error ? error.message : String(error)}`);
+  }
   if (!response.ok) {
     const raw = await response.text();
     throw new Error(`Google Drive ${response.status}: ${raw.slice(0, 500)}`);
@@ -97,9 +112,12 @@ export async function listDriveFiles(rootFolderId: string) {
   if (!rootId) throw new Error('Google Drive root folder is empty');
   const result: Array<DriveFile & { path: string }> = [];
   const queue: Array<{ id: string; path: string }> = [{ id: rootId, path: '' }];
+  let foldersScanned = 0;
 
   while (queue.length) {
     const current = queue.shift()!;
+    foldersScanned++;
+    console.log(`  Scanning folder ${foldersScanned} (pending: ${queue.length})...`);
     let pageToken = '';
     do {
       const params = new URLSearchParams({
@@ -120,6 +138,7 @@ export async function listDriveFiles(rootFolderId: string) {
           result.push({ ...file, path });
         }
       }
+      console.log(`    Found ${data.files?.length ?? 0} entries; total files: ${result.length}; pending folders: ${queue.length}`);
       pageToken = data.nextPageToken ?? '';
     } while (pageToken);
   }
