@@ -1,7 +1,23 @@
-import 'dotenv/config';
+import fs from 'node:fs';
+import path from 'node:path';
+import dotenv from 'dotenv';
 
-// These imports must happen after dotenv is loaded because the imported modules
-// read process.env during module initialization.
+// dotenv does not override variables that already exist in the environment.
+// In Termux, an injected empty variable can therefore mask the real value in .env.
+// Parse .env explicitly and use its Google credentials before importing modules
+// that read process.env during module initialization.
+const envPath = path.resolve(process.cwd(), '.env');
+if (fs.existsSync(envPath)) {
+  const fileEnv = dotenv.parse(fs.readFileSync(envPath));
+  for (const key of [
+    'GOOGLE_DRIVE_ROOT_FOLDER_ID',
+    'GOOGLE_SERVICE_ACCOUNT_JSON_BASE64',
+    'GOOGLE_SERVICE_ACCOUNT_JSON',
+  ]) {
+    if (fileEnv[key]) process.env[key] = fileEnv[key];
+  }
+}
+
 const { db } = await import('../src/db.js');
 const { config } = await import('../src/config.js');
 const { listDriveFiles } = await import('../src/drive.js');
