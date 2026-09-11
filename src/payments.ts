@@ -73,8 +73,6 @@ export async function activateSubscriptionInTransaction(tx: DbTx, userId: number
   const now = new Date();
   const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
 
-  // A user has one effective paid plan. Close any active subscription belonging
-  // to the other paid tier before activating/renewing the requested tier.
   await tx.subscription.updateMany({
     where: { userId, active: true, plan: { not: plan } },
     data: { active: false },
@@ -105,12 +103,36 @@ export async function recordSuccessfulStarsPayment(userId: number, payload: stri
   const parsed = parsePaymentPayload(payload);
   const user = await db.user.findUniqueOrThrow({ where: { id: userId }, select: { telegramId: true } });
   if (!parsed || parsed.telegramId !== user.telegramId || currency !== 'XTR' || planPrice(parsed.plan, parsed.days) !== totalAmount) throw new Error('Invalid payment payload or amount.');
+
   return db.$transaction(async tx => {
     const existing = await tx.paymentTransaction.findUnique({ where: { telegramPaymentChargeId: telegramChargeId } });
-    if (existing?.status === 'PAID') return { alreadyProcessed: true, plan: parsed.plan, days: parsed.days };
+
+    if (existing) {
+      if (existing.userId !== userId || existing.payload !== payload || existing.plan !== parsed.plan || existing.amount !== totalAmount || existing.currency !== currency) {
+        throw new Error('Payment charge is already associated with another transaction.');
+      }
+      if (existing.status === 'PAID') return { alreadyProcessed: true, plan: parsed.plan, days: parsed.days };
+    }
+
     const payment = existing
-      ? await tx.paymentTransaction.update({ where: { id: existing.id }, data: { status: 'PAID', currency, amount: totalAmount, providerPaymentChargeId: providerChargeId } })
-      : await tx.paymentTransaction.create({ data: { userId, plan: parsed.plan, provider: 'TELEGRAM_STARS', currency, amount: totalAmount, payload, telegramPaymentChargeId: telegramChargeId, providerPaymentChargeId: providerChargeId, status: 'PAID' } });
+      ? await tx.paymentTransaction.update({
+          where: { id: existing.id },
+          data: { status: 'PAID', currency, amount: totalAmount, providerPaymentChargeId: providerChargeId },
+        })
+      : await tx.paymentTransaction.create({
+          data: {
+            userId,
+            plan: parsed.plan,
+            provider: 'TELEGRAM_STARS',
+            currency,
+            amount: totalAmount,
+            payload,
+            telegramPaymentChargeId: telegramChargeId,
+            providerPaymentChargeId: providerChargeId,
+            status: 'PAID',
+          },
+        });
+
     await activateSubscriptionInTransaction(tx, userId, parsed.plan, parsed.days, 'TELEGRAM_STARS', payment.id.toString());
     return { alreadyProcessed: false, plan: parsed.plan, days: parsed.days };
   });
