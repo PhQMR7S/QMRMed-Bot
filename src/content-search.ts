@@ -13,7 +13,6 @@ export type RetrievedContent = {
   subjectName?: string | null;
 };
 
-/** Normalize common Arabic/Latin spelling and punctuation before matching. */
 function normalizeText(value: string) {
   return value
     .toLocaleLowerCase()
@@ -30,12 +29,15 @@ function normalizeText(value: string) {
 }
 
 function termsOf(query: string) {
-  return normalizeText(query)
+  const raw = query
+    .normalize('NFKC')
     .split(/\s+/)
     .map((term) => term.trim())
     .filter((term) => term.length >= 2)
     .filter((term, index, all) => all.indexOf(term) === index)
     .slice(0, 12);
+  const normalized = raw.map(normalizeText).filter(Boolean);
+  return Array.from(new Set([...raw, ...normalized])).slice(0, 20);
 }
 
 export async function searchApprovedContent(query: string, options?: {
@@ -66,7 +68,7 @@ export async function searchApprovedContent(query: string, options?: {
     orderBy: { updatedAt: 'desc' },
   });
 
-  const normalizedTerms = terms.map(normalizeText);
+  const normalizedTerms = terms.map(normalizeText).filter((term, index, all) => all.indexOf(term) === index);
   const ranked = chunks
     .map((chunk) => {
       const haystack = normalizeText(`${chunk.title} ${chunk.text}`);
