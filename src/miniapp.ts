@@ -83,7 +83,7 @@ function subscriptionState(user: AuthenticatedUser, active: { plan: 'FREE' | 'PL
 function miniAppRouteLink(route: string) { const base = config.MINI_APP_URL || process.env.RENDER_EXTERNAL_URL; if (!base) return null; try { const url = new URL(base); url.searchParams.set('route', route); return url.toString(); } catch { return null; } }
 function botDeepLink(start: string) { if (!config.MINI_APP_BOT_USERNAME) return null; return `https://t.me/${config.MINI_APP_BOT_USERNAME.replace(/^@/, '')}?start=${encodeURIComponent(start)}`; }
 
-async function handle(req: IncomingMessage, res: ServerResponse) {
+export async function handleMiniAppRequest(req: IncomingMessage, res: ServerResponse) {
   try {
     const url = new URL(req.url || '/', `http://${header(req, 'host') || 'localhost'}`);
     if (req.method === 'GET' && url.pathname === '/api/health') return json(res, 200, { ok: true, service: 'qmrmed-miniapp', time: new Date().toISOString() });
@@ -125,4 +125,4 @@ async function serveStatic(relative: string, res: ServerResponse) {
   const type = ext === '.html' ? 'text/html; charset=utf-8' : ext === '.css' ? 'text/css; charset=utf-8' : ext === '.js' ? 'text/javascript; charset=utf-8' : 'application/octet-stream';
   try { res.writeHead(200, { 'content-type': type, 'cache-control': ext === '.html' ? 'no-cache' : 'public, max-age=300', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'; frame-ancestors https://web.telegram.org https://*.telegram.org" }); createReadStream(safe).pipe(res).on('error', () => res.end()); } catch { json(res, 404, { error: 'Not found' }); }
 }
-export function startMiniApp() { const server = createServer(handle); server.listen(MINI_APP_PORT, MINI_APP_HOST, () => console.log(`QMRMed Mini App listening on http://${MINI_APP_HOST}:${MINI_APP_PORT}`)); return server; }
+export function startMiniApp() { const server = createServer(handleMiniAppRequest); server.listen(MINI_APP_PORT, MINI_APP_HOST, () => console.log(`QMRMed Mini App listening on http://${MINI_APP_HOST}:${MINI_APP_PORT}`)); return server; }

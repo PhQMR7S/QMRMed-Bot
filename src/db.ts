@@ -13,4 +13,6 @@ export async function upsertTelegramUser(from: { id: number; username?: string; 
 
 // Keep the existing local archive as the compatibility/PDF layer while asynchronously
 // mirroring completed records into PostgreSQL for durable production storage.
-if (!process.argv.includes('--test') && process.env.QMRMED_DISABLE_ARCHIVE_SYNC !== '1') startFileAiArchiveSync(db);
+// Vercel functions are ephemeral; the background filesystem sync belongs to the bot
+// runtime, not the Mini App request runtime.
+if (!process.argv.includes('--test') && process.env.QMRMED_DISABLE_ARCHIVE_SYNC !== '1' && process.env.VERCEL !== '1') startFileAiArchiveSync(db);
