@@ -1,8 +1,9 @@
 import 'dotenv/config';
 import { db } from '../src/db.js';
-import { config } from '../src/config.js';
-import { listDriveFiles } from '../src/drive.js';
-import { contentKind, metadataFromPath, shouldIndexPath } from '../src/content-sync.js';
+
+const { config } = await import('../src/config.js');
+const { listDriveFiles } = await import('../src/drive.js');
+const { contentKind, metadataFromPath, shouldIndexPath } = await import('../src/content-sync.js');
 
 const root = config.GOOGLE_DRIVE_ROOT_FOLDER_ID;
 if (!root) throw new Error('GOOGLE_DRIVE_ROOT_FOLDER_ID is not configured');
