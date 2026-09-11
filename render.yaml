@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: qmrmed-miniapp
+    runtime: node
+    region: frankfurt
+    plan: starter
+    branch: main
+    autoDeployTrigger: checksPass
+    buildCommand: npm ci && npm run db:generate && npm run build
+    preDeployCommand: npx prisma db push --skip-generate
+    startCommand: npm run start:miniapp
+    healthCheckPath: /api/health
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: MINI_APP_BOT_USERNAME
+        sync: false
