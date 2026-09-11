@@ -27,6 +27,10 @@ function validateInitData(initData: string): TelegramUser {
   const raw=params.get('user'); if(!raw) throw new Error('Telegram user missing');
   return JSON.parse(raw) as TelegramUser;
 }
+export function miniAppErrorStatus(error: unknown) {
+  const message=error instanceof Error?error.message:'';
+  return /^(Telegram session missing|Invalid Telegram session|Invalid Telegram signature|Telegram session expired|Telegram user missing)$/.test(message) ? 401 : 500;
+}
 async function auth(req: IncomingMessage) { const user=validateInitData(header(req,'x-telegram-init-data')); return upsertTelegramUser(user); }
 function safeUserDir(userId: string) { return resolve(ARCHIVE_ROOT,userId.replace(/[^a-zA-Z0-9_-]/g,'_')); }
 async function archiveFor(userId: string) { const dir=safeUserDir(userId); await mkdir(dir,{recursive:true}); const names=(await readdir(dir)).filter(n=>n.endsWith('.json')).sort().reverse().slice(0,50); const items:any[]=[]; for(const name of names){try{const item=JSON.parse(await readFile(join(dir,name),'utf8')); items.push({id:item.id,sourceName:item.sourceName,operation:item.operation,operationLabel:operationLabels[item.operation]||item.operation,createdAt:item.createdAt?new Date(item.createdAt).toLocaleString('ar-IQ'):'-',hasResult:Boolean(item.result)});}catch{}} return items; }
@@ -55,7 +59,7 @@ async function handle(req:IncomingMessage,res:ServerResponse){
     if(url.pathname==='/api/archive') return json(res,200,await archiveFor(String(user.telegramId)));
     if(url.pathname.startsWith('/api/archive/')){const id=decodeURIComponent(url.pathname.slice('/api/archive/'.length));const item=await archiveDetail(String(user.telegramId),id);if(!item)return json(res,404,{error:'النتيجة غير موجودة'});return json(res,200,{id:item.id,sourceName:item.sourceName,operation:item.operation,operationLabel:operationLabels[item.operation]||item.operation,createdAt:item.createdAt,result:item.result||''});}
     return json(res,404,{error:'Not found'});
-  }catch(error){console.error('Mini App error:',error);return json(res,401,{error:error instanceof Error?error.message:'تعذر التحقق من جلسة Telegram'});}
+  }catch(error){console.error('Mini App error:',error);return json(res,miniAppErrorStatus(error),{error:error instanceof Error?error.message:'تعذر معالجة الطلب'});}
 }
 async function serveStatic(relative:string,res:ServerResponse){const safe=resolve(STATIC_ROOT,relative);if(!safe.startsWith(STATIC_ROOT+'/') && safe!==STATIC_ROOT)return json(res,404,{error:'Not found'});const ext=extname(safe);const type=ext==='.html'?'text/html; charset=utf-8':ext==='.css'?'text/css; charset=utf-8':ext==='.js'?'text/javascript; charset=utf-8':'application/octet-stream';try{res.writeHead(200,{'content-type':type,'cache-control':'no-cache'});createReadStream(safe).pipe(res).on('error',()=>res.end());}catch{json(res,404,{error:'Not found'});}}
 
