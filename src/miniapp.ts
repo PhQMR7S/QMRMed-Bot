@@ -2,15 +2,22 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { extname, resolve } from 'node:path';
-import { config } from './config.js';
 import { db, upsertTelegramUser } from './db.js';
 
 type TelegramUser = { id: number; first_name?: string; last_name?: string; username?: string };
 type AuthenticatedUser = Awaited<ReturnType<typeof upsertTelegramUser>>;
+
 const MINI_APP_PORT = Number(process.env.MINI_APP_PORT || process.env.PORT || 3000);
 const MINI_APP_HOST = process.env.MINI_APP_HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
 const STATIC_ROOT = resolve(process.cwd(), 'miniapp');
 const MAX_INIT_AGE_SECONDS = 60 * 60;
+const BOT_TOKEN = process.env.BOT_TOKEN || '';
+const MINI_APP_URL = process.env.MINI_APP_URL || process.env.RENDER_EXTERNAL_URL || '';
+const MINI_APP_BOT_USERNAME = process.env.MINI_APP_BOT_USERNAME || '';
+const stars = (name: string, fallback: number) => {
+  const value = Number(process.env[name]);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+};
 const operationLabels: Record<string, string> = { explain: 'شرح المحاضرة', summary: 'تلخيص دقيق', qa: 'أسئلة قصيرة', mcq: 'MCQ', true_false: 'صح / خطأ', fill_blank: 'أكمل الفراغ', matching: 'مطابقة', cases: 'حالات سريرية', viva: 'Viva / شفوي', mind_map: 'خريطة ذهنية', flowchart: 'مخطط انسيابي', comparison: 'جدول مقارنة', timeline: 'خط زمني', diagnostic: 'خوارزمية تشخيصية', exam: 'اختبار تجريبي' };
 
 function json(res: ServerResponse, status: number, data: unknown) {
@@ -21,13 +28,13 @@ function json(res: ServerResponse, status: number, data: unknown) {
 function header(req: IncomingMessage, name: string) { const value = req.headers[name.toLowerCase()]; return Array.isArray(value) ? value[0] : value || ''; }
 
 export function validateInitData(initData: string, nowSeconds = Math.floor(Date.now() / 1000)): TelegramUser {
-  if (!initData || !config.BOT_TOKEN) throw new Error('AUTH_MISSING');
+  if (!initData || !BOT_TOKEN) throw new Error('AUTH_MISSING');
   const params = new URLSearchParams(initData);
   const received = params.get('hash');
   if (!received || !/^[a-f0-9]{64}$/i.test(received)) throw new Error('AUTH_INVALID');
   params.delete('hash');
   const dataCheck = Array.from(params.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${key}=${value}`).join('\n');
-  const secret = createHmac('sha256', 'WebAppData').update(config.BOT_TOKEN).digest();
+  const secret = createHmac('sha256', 'WebAppData').update(BOT_TOKEN).digest();
   const expected = createHmac('sha256', secret).update(dataCheck).digest('hex');
   const receivedBytes = Buffer.from(received, 'hex');
   const expectedBytes = Buffer.from(expected, 'hex');
@@ -47,19 +54,19 @@ export function miniAppErrorStatus(error: unknown) { return error instanceof Err
 async function auth(req: IncomingMessage) { return upsertTelegramUser(validateInitData(header(req, 'x-telegram-init-data'))); }
 
 async function telegramProfilePhoto(telegramId: string): Promise<string | null> {
-  if (!config.BOT_TOKEN) return null;
+  if (!BOT_TOKEN) return null;
   try {
-    const photosResponse = await fetch(`https://api.telegram.org/bot${config.BOT_TOKEN}/getUserProfilePhotos?user_id=${encodeURIComponent(telegramId)}&limit=1`);
+    const photosResponse = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getUserProfilePhotos?user_id=${encodeURIComponent(telegramId)}&limit=1`);
     if (!photosResponse.ok) return null;
     const photos = await photosResponse.json() as { ok?: boolean; result?: { photos?: Array<Array<{ file_id: string; width: number; height: number }>> } };
     const sizes = photos.result?.photos?.[0];
     if (!photos.ok || !sizes?.length) return null;
     const largest = [...sizes].sort((a, b) => (b.width * b.height) - (a.width * a.height))[0];
-    const fileResponse = await fetch(`https://api.telegram.org/bot${config.BOT_TOKEN}/getFile?file_id=${encodeURIComponent(largest.file_id)}`);
+    const fileResponse = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${encodeURIComponent(largest.file_id)}`);
     if (!fileResponse.ok) return null;
     const file = await fileResponse.json() as { ok?: boolean; result?: { file_path?: string } };
     if (!file.ok || !file.result?.file_path) return null;
-    const imageResponse = await fetch(`https://api.telegram.org/file/bot${config.BOT_TOKEN}/${file.result.file_path}`);
+    const imageResponse = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${file.result.file_path}`);
     if (!imageResponse.ok) return null;
     const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
     return `data:${contentType};base64,${Buffer.from(await imageResponse.arrayBuffer()).toString('base64')}`;
@@ -80,8 +87,8 @@ function subscriptionState(user: AuthenticatedUser, active: { plan: 'FREE' | 'PL
   if (user.trialEndsAt && user.trialEndsAt > now) return { status: 'TRIAL', label: 'تجربة مجانية', plan: 'FREE' as const, startsAt: user.trialStartedAt?.toISOString() || null, endsAt: user.trialEndsAt.toISOString(), daysRemaining: Math.max(0, Math.ceil((user.trialEndsAt.getTime() - now.getTime()) / 86400000)) };
   return { status: 'FREE', label: 'مجاني', plan: 'FREE' as const, startsAt: null, endsAt: null, daysRemaining: 0 };
 }
-function miniAppRouteLink(route: string) { const base = config.MINI_APP_URL || process.env.RENDER_EXTERNAL_URL; if (!base) return null; try { const url = new URL(base); url.searchParams.set('route', route); return url.toString(); } catch { return null; } }
-function botDeepLink(start: string) { if (!config.MINI_APP_BOT_USERNAME) return null; return `https://t.me/${config.MINI_APP_BOT_USERNAME.replace(/^@/, '')}?start=${encodeURIComponent(start)}`; }
+function miniAppRouteLink(route: string) { if (!MINI_APP_URL) return null; try { const url = new URL(MINI_APP_URL); url.searchParams.set('route', route); return url.toString(); } catch { return null; } }
+function botDeepLink(start: string) { if (!MINI_APP_BOT_USERNAME) return null; return `https://t.me/${MINI_APP_BOT_USERNAME.replace(/^@/, '')}?start=${encodeURIComponent(start)}`; }
 
 export async function handleMiniAppRequest(req: IncomingMessage, res: ServerResponse) {
   try {
@@ -106,8 +113,8 @@ export async function handleMiniAppRequest(req: IncomingMessage, res: ServerResp
     }
     if (url.pathname === '/api/plans') return json(res, 200, [
       { code: 'FREE', name: 'FREE', subtitle: 'البداية الأساسية مع تجربة QMRMed.', current: user.plan === 'FREE' && !user.trialEndsAt, durations: [], features: ['الوصول إلى المحتوى المجاني', 'الحساب والأرشيف الشخصي'] },
-      { code: 'PLUS', name: 'PLUS', subtitle: 'حدود وميزات تعليمية موسعة.', current: user.plan === 'PLUS', durations: [{ days: 30, label: 'شهر واحد', stars: config.PLUS_MONTH_STARS }, { days: 150, label: '5 أشهر', stars: config.PLUS_5MONTH_STARS }, { days: 365, label: 'سنة واحدة', stars: config.PLUS_YEAR_STARS }], features: ['حدود AI أعلى', 'ميزات تعليمية موسعة', 'أرشيف موسع'] },
-      { code: 'PRO', name: 'PRO', subtitle: 'أعلى مستوى من المنصة التعليمية.', current: user.plan === 'PRO', durations: [{ days: 30, label: 'شهر واحد', stars: config.PRO_MONTH_STARS }, { days: 150, label: '5 أشهر', stars: config.PRO_5MONTH_STARS }, { days: 365, label: 'سنة واحدة', stars: config.PRO_YEAR_STARS }], features: ['أولوية أعلى للذكاء الاصطناعي', 'ميزات متقدمة', 'أعلى حدود للاستخدام والأرشيف'] },
+      { code: 'PLUS', name: 'PLUS', subtitle: 'حدود وميزات تعليمية موسعة.', current: user.plan === 'PLUS', durations: [{ days: 30, label: 'شهر واحد', stars: stars('PLUS_MONTH_STARS', 250) }, { days: 150, label: '5 أشهر', stars: stars('PLUS_5MONTH_STARS', 500) }, { days: 365, label: 'سنة واحدة', stars: stars('PLUS_YEAR_STARS', 1000) }], features: ['حدود AI أعلى', 'ميزات تعليمية موسعة', 'أرشيف موسع'] },
+      { code: 'PRO', name: 'PRO', subtitle: 'أعلى مستوى من المنصة التعليمية.', current: user.plan === 'PRO', durations: [{ days: 30, label: 'شهر واحد', stars: stars('PRO_MONTH_STARS', 500) }, { days: 150, label: '5 أشهر', stars: stars('PRO_5MONTH_STARS', 1000) }, { days: 365, label: 'سنة واحدة', stars: stars('PRO_YEAR_STARS', 2000) }], features: ['أولوية أعلى للذكاء الاصطناعي', 'ميزات متقدمة', 'أعلى حدود للاستخدام والأرشيف'] },
     ]);
     if (url.pathname === '/api/archive') return json(res, 200, await archiveFor(user.id));
     if (url.pathname.startsWith('/api/archive/')) { const item = await archiveDetail(user.id, decodeURIComponent(url.pathname.slice('/api/archive/'.length))); return item ? json(res, 200, item) : json(res, 404, { error: 'النتيجة غير موجودة' }); }
