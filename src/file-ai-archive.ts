@@ -1,4 +1,3 @@
-import { createReadStream } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -21,16 +20,7 @@ let syncRunning = false;
 function validItem(value: unknown): value is PersistableFileAiArchive {
   if (!value || typeof value !== 'object') return false;
   const item = value as Partial<PersistableFileAiArchive>;
-  return Boolean(
-    typeof item.id === 'string' && /^[A-Za-z0-9_-]+$/.test(item.id) &&
-    typeof item.userId === 'string' && item.userId.length > 0 &&
-    typeof item.sourceName === 'string' &&
-    typeof item.mimeType === 'string' &&
-    typeof item.operation === 'string' &&
-    typeof item.createdAt === 'string' && !Number.isNaN(Date.parse(item.createdAt)) &&
-    typeof item.text === 'string' &&
-    typeof item.result === 'string',
-  );
+  return Boolean(typeof item.id === 'string' && /^[A-Za-z0-9_-]+$/.test(item.id) && typeof item.userId === 'string' && item.userId.length > 0 && typeof item.sourceName === 'string' && typeof item.mimeType === 'string' && typeof item.operation === 'string' && typeof item.createdAt === 'string' && !Number.isNaN(Date.parse(item.createdAt)) && typeof item.text === 'string' && typeof item.result === 'string');
 }
 
 export async function persistFileAiArchive(db: PrismaClient, item: PersistableFileAiArchive) {
@@ -38,25 +28,8 @@ export async function persistFileAiArchive(db: PrismaClient, item: PersistableFi
   if (!user) return false;
   await db.fileAiArchive.upsert({
     where: { id: item.id },
-    create: {
-      id: item.id,
-      userId: user.id,
-      sourceName: item.sourceName.slice(0, 500),
-      mimeType: item.mimeType.slice(0, 200),
-      operation: item.operation.slice(0, 100),
-      sourceTextGzip: gzipSync(Buffer.from(item.text, 'utf8')),
-      result: item.result,
-      createdAt: new Date(item.createdAt),
-    },
-    update: {
-      userId: user.id,
-      sourceName: item.sourceName.slice(0, 500),
-      mimeType: item.mimeType.slice(0, 200),
-      operation: item.operation.slice(0, 100),
-      sourceTextGzip: gzipSync(Buffer.from(item.text, 'utf8')),
-      result: item.result,
-      createdAt: new Date(item.createdAt),
-    },
+    create: { id: item.id, userId: user.id, sourceName: item.sourceName.slice(0, 500), mimeType: item.mimeType.slice(0, 200), operation: item.operation.slice(0, 100), sourceTextGzip: gzipSync(Buffer.from(item.text, 'utf8')), result: item.result, createdAt: new Date(item.createdAt) },
+    update: { userId: user.id, sourceName: item.sourceName.slice(0, 500), mimeType: item.mimeType.slice(0, 200), operation: item.operation.slice(0, 100), sourceTextGzip: gzipSync(Buffer.from(item.text, 'utf8')), result: item.result, createdAt: new Date(item.createdAt) },
   });
   return true;
 }
@@ -67,8 +40,7 @@ async function scanUserDirectory(db: PrismaClient, userDirectory: string) {
   for (const entry of files) {
     if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
     try {
-      const raw = await readFile(join(userDirectory, entry.name), 'utf8');
-      const parsed: unknown = JSON.parse(raw);
+      const parsed: unknown = JSON.parse(await readFile(join(userDirectory, entry.name), 'utf8'));
       if (validItem(parsed) && await persistFileAiArchive(db, parsed)) synced += 1;
     } catch {
       // A file may be mid-write. The next sync will retry it.
@@ -82,8 +54,8 @@ export async function syncLocalFileAiArchives(db: PrismaClient) {
   syncRunning = true;
   try {
     let total = 0;
-    let users: Array<{ name: string; isDirectory: () => boolean }> = [];
-    try { users = await readdir(ARCHIVE_ROOT, { withFileTypes: true }) as unknown as typeof users; } catch { return 0; }
+    let users: Array<{ name: string; isDirectory(): boolean }>;
+    try { users = await readdir(ARCHIVE_ROOT, { withFileTypes: true }); } catch { return 0; }
     for (const entry of users) {
       if (!entry.isDirectory()) continue;
       total += await scanUserDirectory(db, join(ARCHIVE_ROOT, entry.name));
@@ -95,9 +67,7 @@ export async function syncLocalFileAiArchives(db: PrismaClient) {
 }
 
 export function startFileAiArchiveSync(db: PrismaClient) {
-  const interval = setInterval(() => {
-    void syncLocalFileAiArchives(db).catch((error) => console.error('File AI archive sync error:', error));
-  }, 15_000);
+  const interval = setInterval(() => { void syncLocalFileAiArchives(db).catch((error) => console.error('File AI archive sync error:', error)); }, 15_000);
   interval.unref?.();
   void syncLocalFileAiArchives(db).catch((error) => console.error('File AI archive initial sync error:', error));
   return interval;
