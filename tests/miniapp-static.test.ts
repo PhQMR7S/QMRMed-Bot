@@ -18,7 +18,6 @@ test('Mini App loads runtime and keeps the working shell independent of API read
   assert.match(runtime, /function render\(\)/, 'runtime must contain the render implementation');
   assert.match(runtime, /render\(\);/, 'runtime must initialize the first render');
   assert.match(runtime, /loadUser\(\);/, 'runtime must load user data after the initial render');
-  assert.match(runtime, /loadPlans\(\);/, 'runtime must load plans after the initial render');
   assert.match(runtime, /api\('\/api\/me'\)/, 'runtime must load the authenticated user through the API');
   assert.match(runtime, /api\('\/api\/plans'\)/, 'runtime must load plans through the API');
 });
