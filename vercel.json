@@ -1,11 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "version": 2,
-  "functions": {
-    "api/index.ts": {
-      "runtime": "nodejs22.x"
-    }
-  },
   "redirects": [
     { "source": "/", "destination": "/miniapp/", "permanent": false }
   ]
