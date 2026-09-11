@@ -31,6 +31,14 @@ function serviceAccount(): ServiceAccount {
   }
 }
 
+/** Accept either a raw Drive folder ID or a standard Drive folder URL. */
+export function normalizeDriveFolderId(value: string): string {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^https?:\/\/drive\.google\.com\/drive\/folders\/([^/?#]+)/i);
+  if (match?.[1]) return decodeURIComponent(match[1]);
+  return trimmed;
+}
+
 function base64Url(value: string | Buffer) {
   return Buffer.from(value).toString('base64url');
 }
@@ -79,13 +87,16 @@ async function driveFetch(path: string, init?: RequestInit) {
 }
 
 export async function getDriveFile(fileId: string) {
-  const response = await driveFetch(`/files/${encodeURIComponent(fileId)}?supportsAllDrives=true&fields=id,name,mimeType,modifiedTime,md5Checksum,webViewLink,parents`);
+  const id = normalizeDriveFolderId(fileId);
+  const response = await driveFetch(`/files/${encodeURIComponent(id)}?supportsAllDrives=true&fields=id,name,mimeType,modifiedTime,md5Checksum,webViewLink,parents`);
   return response.json() as Promise<DriveFile>;
 }
 
 export async function listDriveFiles(rootFolderId: string) {
+  const rootId = normalizeDriveFolderId(rootFolderId);
+  if (!rootId) throw new Error('Google Drive root folder is empty');
   const result: Array<DriveFile & { path: string }> = [];
-  const queue: Array<{ id: string; path: string }> = [{ id: rootFolderId, path: '' }];
+  const queue: Array<{ id: string; path: string }> = [{ id: rootId, path: '' }];
 
   while (queue.length) {
     const current = queue.shift()!;
@@ -113,41 +124,4 @@ export async function listDriveFiles(rootFolderId: string) {
     } while (pageToken);
   }
   return result;
-}
-
-async function responseBytes(response: Response) {
-  const buffer = await response.arrayBuffer();
-  return new Uint8Array(buffer);
-}
-
-export async function downloadDriveText(file: DriveFile) {
-  const googleDoc = file.mimeType === 'application/vnd.google-apps.document';
-  const googleSheet = file.mimeType === 'application/vnd.google-apps.spreadsheet';
-  const googleSlides = file.mimeType === 'application/vnd.google-apps.presentation';
-  if (googleDoc) {
-    const response = await driveFetch(`/files/${encodeURIComponent(file.id)}/export?mimeType=text/plain`);
-    return response.text();
-  }
-  if (googleSheet) {
-    const response = await driveFetch(`/files/${encodeURIComponent(file.id)}/export?mimeType=text/csv`);
-    return response.text();
-  }
-  if (googleSlides) {
-    const response = await driveFetch(`/files/${encodeURIComponent(file.id)}/export?mimeType=text/plain`);
-    return response.text();
-  }
-
-  if (file.mimeType === 'application/pdf') {
-    const response = await driveFetch(`/files/${encodeURIComponent(file.id)}?alt=media&supportsAllDrives=true`);
-    const bytes = await responseBytes(response);
-    const pdf = await getDocumentProxy(bytes);
-    const result = await extractText(pdf, { mergePages: true });
-    return String(result.text);
-  }
-
-  const supported = new Set(['text/plain', 'text/markdown', 'text/csv', 'application/json']);
-  if (!supported.has(file.mimeType)) return null;
-  const response = await driveFetch(`/files/${encodeURIComponent(file.id)}?alt=media&supportsAllDrives=true`);
-  const bytes = await responseBytes(response);
-  return new TextDecoder().decode(bytes);
 }
