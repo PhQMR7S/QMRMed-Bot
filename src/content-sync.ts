@@ -4,19 +4,76 @@ import { downloadDriveText, listDriveFiles } from './drive.js';
 import type { ContentKind } from '@prisma/client';
 
 const DEPARTMENTS: Record<string, string> = {
-  medicine: 'Medicine', 'طب عام': 'Medicine',
-  pharmacy: 'Pharmacy', 'صيدلة': 'Pharmacy',
-  dentistry: 'Dentistry', 'طب أسنان': 'Dentistry',
+  medicine: 'Medicine',
+  medical: 'Medicine',
+  'طب': 'Medicine',
+  'طب عام': 'Medicine',
+  'طب بشري': 'Medicine',
+  pharmacy: 'Pharmacy',
+  'صيدلة': 'Pharmacy',
+  dentistry: 'Dentistry',
+  'طب أسنان': 'Dentistry',
+  'طب الأسنان': 'Dentistry',
+  'اسنان': 'Dentistry',
+  'أسنان': 'Dentistry',
+  nursing: 'Nursing',
+  'تمريض': 'Nursing',
+  anesthesia: 'Anesthesia',
+  'تخدير': 'Anesthesia',
+  'تقنيات التخدير': 'Anesthesia',
+  radiology: 'Radiology',
+  'اشعة': 'Radiology',
+  'أشعة': 'Radiology',
+  'تقنيات الأشعة والسونار': 'Radiology',
+  'تقنيات الاشعة والسونار': 'Radiology',
+  laboratory: 'Medical Laboratory Techniques',
+  'مختبرات': 'Medical Laboratory Techniques',
+  'تقنيات المختبرات الطبية': 'Medical Laboratory Techniques',
+  dental: 'Dental Technology',
+  'صناعة الأسنان': 'Dental Technology',
+  'تقنيات صناعة الأسنان': 'Dental Technology',
+  physiotherapy: 'Physiotherapy',
+  'علاج طبيعي': 'Physiotherapy',
+  'تقنيات العلاج الطبيعي': 'Physiotherapy',
+  optics: 'Optics',
+  'بصريات': 'Optics',
+  'تقنيات البصريات': 'Optics',
+  emergency: 'Emergency Medical Techniques',
+  'طوارئ': 'Emergency Medical Techniques',
+  'طب الطوارئ': 'Emergency Medical Techniques',
+  'تقنيات طب الطوارئ': 'Emergency Medical Techniques',
+  cardiac: 'Cardiac Care Techniques',
+  'عناية القلب': 'Cardiac Care Techniques',
+  'تقنيات عناية القلب': 'Cardiac Care Techniques',
 };
+
 const KIND_FOLDER_NAMES = new Set([
-  'sources', 'source', 'ministerial', 'ministerials', 'question bank', 'questions',
-  'references', 'reference', 'shared references', 'مصادر', 'المصادر', 'وزاريات', 'وزاري',
-  'بنك الأسئلة', 'الأسئلة', 'مراجع', 'مرجع',
+  'sources', 'source', 'المصادر', 'مصادر',
+  'references', 'reference', 'shared references', 'مراجع', 'مرجع', 'المراجع',
+  'ministerial', 'ministerials', 'وزاريات', 'وزاري', 'الوزاريات', 'الأسئلة الوزارية', 'أسئلة وزارية',
+  'question bank', 'questions', 'بنك الأسئلة', 'الأسئلة', 'الاسئلة', 'أسئلة', 'اسئلة',
+  'cases', 'case', 'حالات', 'الحالات', 'حالات سريرية', 'الحالات السريرية',
 ]);
+
 const EXCLUDED_PATH_SEGMENTS = new Set([
   '99 - system', '99 - other', '01 - import', '02 - review', '03 - archive',
   '04 - rejected', '05 - temporary', '05 - duplicates', '04 - processed', '03 - needs review',
 ]);
+
+const ARABIC_STAGES: Record<string, string> = {
+  'الأولى': '1',
+  'الاولى': '1',
+  'الثانية': '2',
+  'الثانيه': '2',
+  'الثالثة': '3',
+  'الثالثه': '3',
+  'الرابعة': '4',
+  'الرابعه': '4',
+  'الخامسة': '5',
+  'الخامسه': '5',
+  'السادسة': '6',
+  'السادسه': '6',
+};
 
 export function normalizeFolderName(part: string) { return part.trim().replace(/^\d+\s*-\s*/, '').trim(); }
 export function normalizedSegments(path: string) { return path.split('/').filter(Boolean).map(normalizeFolderName); }
@@ -26,30 +83,45 @@ export function shouldIndexPath(path: string) {
 }
 export function isKindFolder(part: string) {
   const normalized = normalizeFolderName(part).toLocaleLowerCase();
-  return KIND_FOLDER_NAMES.has(normalized) || normalized.includes('ministerial') || normalized.includes('وزاري') || normalized.includes('وزاريات') || normalized.includes('question bank') || normalized.includes('بنك الأسئلة') || normalized.includes('shared references');
+  return KIND_FOLDER_NAMES.has(normalized)
+    || normalized.includes('ministerial')
+    || normalized.includes('وزاري')
+    || normalized.includes('وزاريات')
+    || normalized.includes('question bank')
+    || normalized.includes('بنك الأسئلة')
+    || normalized.includes('shared references')
+    || normalized.includes('مرجع')
+    || normalized.includes('مصادر')
+    || normalized.includes('حالات سريرية')
+    || normalized.includes('الحالات السريرية');
 }
 export function contentKind(path: string): ContentKind | null {
   const segments = normalizedSegments(path).slice(0, -1).map((part) => part.toLocaleLowerCase());
   if (segments.some((part) => part.includes('ministerial') || part.includes('وزاري') || part.includes('وزاريات'))) return 'MINISTERIAL';
-  if (segments.some((part) => part === 'question bank' || part === 'questions' || part.includes('بنك الأسئلة') || part === 'الأسئلة')) return 'QUESTION';
+  if (segments.some((part) => part === 'question bank' || part === 'questions' || part.includes('بنك الأسئلة') || part === 'الأسئلة' || part === 'الاسئلة' || part === 'أسئلة' || part === 'اسئلة')) return 'QUESTION';
+  if (segments.some((part) => part === 'cases' || part === 'case' || part.includes('حالات سريرية') || part.includes('الحالات السريرية'))) return 'CASE';
   if (segments.some((part) => part === 'references' || part === 'reference' || part.includes('مرجع') || part.includes('shared references'))) return 'REFERENCE';
   if (segments.some((part) => part === 'sources' || part === 'source' || part.includes('مصادر') || part === 'المصادر')) return 'SOURCE';
   return null;
 }
 export function normalizeStage(part: string) {
-  const match = part.match(/(?:stage|year|مرحلة|سنة)\s*[-_ ]*(\d+)/i);
-  return match?.[1] ?? null;
+  const normalized = normalizeFolderName(part).toLocaleLowerCase();
+  const match = normalized.match(/(?:stage|year|مرحلة|سنة)\s*[-_ ]*(\d+)/i);
+  if (match?.[1]) return match[1];
+  const arabicMatch = normalized.match(/(?:ال)?(?:مرحلة|سنة)\s*[-_ ]*(الأولى|الاولى|الثانية|الثانيه|الثالثة|الثالثه|الرابعة|الرابعه|الخامسة|الخامسه|السادسة|السادسه)/);
+  if (arabicMatch?.[1]) return ARABIC_STAGES[arabicMatch[1]] ?? null;
+  const bareArabic = ARABIC_STAGES[normalized];
+  return bareArabic ?? null;
 }
 export function metadataFromPath(path: string) {
   const parts = normalizedSegments(path).slice(0, -1);
   const normalized = parts.map((part) => DEPARTMENTS[part.toLocaleLowerCase()] ?? part);
   const departmentIndex = normalized.findIndex((part) => Object.values(DEPARTMENTS).includes(part));
   const department = departmentIndex >= 0 ? normalized[departmentIndex] : null;
-  const stagePart = normalized.find((part) => normalizeStage(part) !== null);
-  const stage = stagePart ? normalizeStage(stagePart) : null;
+  const stageIndex = normalized.findIndex((part, index) => index > departmentIndex && normalizeStage(part) !== null);
+  const stage = stageIndex >= 0 ? normalizeStage(normalized[stageIndex]) : null;
   const kindIndex = parts.findIndex(isKindFolder);
-  const kindFolder = kindIndex >= 0 ? normalizeFolderName(parts[kindIndex]).toLocaleLowerCase() : null;
-  const subjectName = kindIndex > 0 && kindFolder !== 'shared references' ? normalized[kindIndex - 1] : null;
+  const subjectName = stageIndex >= 0 && kindIndex > stageIndex + 1 ? normalized[stageIndex + 1] : null;
   return { department, stage, subjectName };
 }
 export function chunkText(text: string, size: number) {
