@@ -8,18 +8,17 @@ async function text(path: string) {
   return readFile(new URL(path, root), 'utf8');
 }
 
-test('Mini App loads app.js before bootstrap and bootstrap initializes the view', async () => {
+test('Mini App loads runtime and keeps the working shell independent of API readiness', async () => {
   const html = await text('miniapp/index.html');
-  const bootstrap = await text('miniapp/bootstrap.js');
-  const app = await text('miniapp/app.js');
+  const runtime = await text('miniapp/runtime.js');
 
-  const appScript = html.indexOf('src="/miniapp/app.js"');
-  const bootstrapScript = html.indexOf('src="/miniapp/bootstrap.js"');
+  const runtimeScript = html.indexOf('src="/miniapp/runtime.js');
 
-  assert.notEqual(appScript, -1, 'app.js must be loaded by the Mini App');
-  assert.notEqual(bootstrapScript, -1, 'bootstrap.js must be loaded by the Mini App');
-  assert.ok(appScript < bootstrapScript, 'bootstrap.js must run after app.js');
-  assert.match(app, /async function render\(\)/, 'app.js must expose the render implementation');
-  assert.match(bootstrap, /typeof window\.render === 'function'/, 'bootstrap must initialize the first render');
-  assert.match(bootstrap, /window\.render\(\)/, 'bootstrap must invoke the initial render');
+  assert.notEqual(runtimeScript, -1, 'runtime.js must be loaded by the Mini App');
+  assert.match(runtime, /function render\(\)/, 'runtime must contain the render implementation');
+  assert.match(runtime, /render\(\);/, 'runtime must initialize the first render');
+  assert.match(runtime, /loadUser\(\);/, 'runtime must load user data after the initial render');
+  assert.match(runtime, /loadPlans\(\);/, 'runtime must load plans after the initial render');
+  assert.match(runtime, /api\('\/api\/me'\)/, 'runtime must load the authenticated user through the API');
+  assert.match(runtime, /api\('\/api\/plans'\)/, 'runtime must load plans through the API');
 });
