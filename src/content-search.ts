@@ -13,13 +13,29 @@ export type RetrievedContent = {
   subjectName?: string | null;
 };
 
-function termsOf(query: string) {
-  return query
+/** Normalize common Arabic/Latin spelling and punctuation before matching. */
+function normalizeText(value: string) {
+  return value
     .toLocaleLowerCase()
+    .normalize('NFKC')
+    .replace(/[إأآٱ]/g, 'ا')
+    .replace(/ى/g, 'ي')
+    .replace(/ؤ/g, 'و')
+    .replace(/ئ/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/[ًٌٍَُِّْـ]/g, '')
+    .replace(/[.,!?;:()[\]{}<>"'`~@#$%^&*+=|\\/\-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function termsOf(query: string) {
+  return normalizeText(query)
     .split(/\s+/)
     .map((term) => term.trim())
     .filter((term) => term.length >= 2)
-    .slice(0, 10);
+    .filter((term, index, all) => all.indexOf(term) === index)
+    .slice(0, 12);
 }
 
 export async function searchApprovedContent(query: string, options?: {
@@ -37,19 +53,36 @@ export async function searchApprovedContent(query: string, options?: {
     where: {
       source: {
         approved: true,
+        indexed: true,
         ...(options?.department ? { department: options.department } : {}),
         ...(options?.stage ? { stage: options.stage } : {}),
         ...(options?.subjectName ? { subjectName: options.subjectName } : {}),
       },
       ...(options?.kinds?.length ? { kind: { in: options.kinds } } : {}),
-      OR: terms.map((term) => ({ text: { contains: term } })),
+      OR: terms.map((term) => ({ text: { contains: term, mode: 'insensitive' } })),
     },
     include: { source: true },
-    take,
+    take: Math.min(take * 3, 90),
     orderBy: { updatedAt: 'desc' },
   });
 
-  return chunks.map((chunk) => ({
+  const normalizedTerms = terms.map(normalizeText);
+  const ranked = chunks
+    .map((chunk) => {
+      const haystack = normalizeText(`${chunk.title} ${chunk.text}`);
+      let score = 0;
+      for (const term of normalizedTerms) {
+        const occurrences = haystack.split(term).length - 1;
+        score += occurrences;
+        if (normalizeText(chunk.title).includes(term)) score += 5;
+      }
+      return { chunk, score };
+    })
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score || b.chunk.updatedAt.getTime() - a.chunk.updatedAt.getTime())
+    .slice(0, take);
+
+  return ranked.map(({ chunk }) => ({
     title: chunk.title,
     text: chunk.text,
     kind: chunk.kind,
