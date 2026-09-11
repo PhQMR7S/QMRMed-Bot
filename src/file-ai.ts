@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { extractText, getDocumentProxy } from 'unpdf';
 import { Bot, Context, InlineKeyboard, InputFile } from 'grammy';
 import { config } from './config.js';
-import { routedChat } from './ai-routing.js';
+import { routedChat, type AIMessage } from './ai-routing.js';
 import { upsertTelegramUser } from './db.js';
 import type { Plan } from '@prisma/client';
 
@@ -16,6 +16,11 @@ const execFileAsync = promisify(execFile);
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const ARCHIVE_ROOT = join(process.cwd(), '.qmrmed', 'file-ai');
 const SIGNATURE = 'QMRMed — Medical Education Platform';
+const AI_DIRECT_MAX_CHARS = 7_500;
+const AI_CHUNK_TARGET_CHARS = 7_000;
+const AI_EVIDENCE_MAX_CHARS = 1_400;
+const AI_SYNTHESIS_MAX_CHARS = 7_000;
+const operationLocks = new Map<string, Promise<void>>();
 
 type Operation = 'explain' | 'summary' | 'qa' | 'mcq' | 'true_false' | 'fill_blank' | 'matching' | 'cases' | 'viva' | 'mind_map' | 'flowchart' | 'comparison' | 'timeline' | 'diagnostic' | 'exam';
 type ArchiveItem = { id: string; userId: string; sourceName: string; mimeType: string; operation: Operation; createdAt: string; text: string; result: string; pdfPath?: string };
@@ -28,7 +33,6 @@ function userDir(userId: string) { return join(ARCHIVE_ROOT, userId.replace(/[^a
 function archivePath(userId: string, id: string) { return join(userDir(userId), `${id}.json`); }
 function safeName(name: string) { return name.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80) || 'qmrmed'; }
 function userId(ctx: Context) { if (!ctx.from) throw new Error('Missing Telegram user'); return String(ctx.from.id); }
-
 function menu() {
   return new InlineKeyboard()
     .text('شرح', 'fileai:op:explain').text('تلخيص', 'fileai:op:summary').row()
@@ -54,10 +58,8 @@ async function listArchive(uid: string) {
 }
 
 async function extractOffice(buffer: Buffer, ext: string) {
-  const work = join(tmpdir(), `qmrmed-office-${randomUUID()}`);
-  await mkdir(work, { recursive: true });
-  const input = join(work, `input.${ext}`);
-  await writeFile(input, buffer);
+  const work = join(tmpdir(), `qmrmed-office-${randomUUID()}`); await mkdir(work, { recursive: true });
+  const input = join(work, `input.${ext}`); await writeFile(input, buffer);
   const { stdout } = await execFileAsync('python3', ['scripts/extract-office.py', input], { maxBuffer: 8 * 1024 * 1024 });
   return stdout.trim();
 }
@@ -93,9 +95,48 @@ function promptFor(operation: Operation, sourceName: string, text: string) {
     diagnostic: 'حوّل المعلومات التشخيصية الواردة في الملف إلى خوارزمية تشخيصية خطوة بخطوة دون إضافة معلومات خارج الملف.',
     exam: 'أنشئ اختبارًا تجريبيًا من 30 سؤالًا متنوعًا من محتوى الملف فقط، مع مفتاح إجابة وشرح مختصر.',
   };
-  return `${common}\n\nالمطلوب:\n${task[operation]}\n\nالنص المستخرج:\n${text.slice(0, 120_000)}`;
+  return `${common}\n\nالمطلوب:\n${task[operation]}\n\nالنص المستخرج:\n${text}`;
 }
-async function generate(operation: Operation, plan: Plan, sourceName: string, text: string) { return routedChat('study', plan, [{ role: 'system', content: 'QMRMed Lecture Intelligence: grounded file transformation only.' }, { role: 'user', content: promptFor(operation, sourceName, text) }], 0.2); }
+
+function splitText(text: string, target = AI_CHUNK_TARGET_CHARS) {
+  const chunks: string[] = [];
+  let rest = text.trim();
+  while (rest.length > target) {
+    let cut = Math.max(rest.lastIndexOf('\n\n', target), rest.lastIndexOf('\n', target), rest.lastIndexOf(' ', target));
+    if (cut < Math.floor(target * 0.65)) cut = target;
+    chunks.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest) chunks.push(rest);
+  return chunks;
+}
+
+async function chat(plan: Plan, messages: AIMessage[], temperature = 0.2) {
+  return routedChat('study', plan, messages, temperature);
+}
+
+async function generate(operation: Operation, plan: Plan, sourceName: string, text: string) {
+  if (text.length <= AI_DIRECT_MAX_CHARS) return chat(plan, [{ role: 'system', content: 'QMRMed Lecture Intelligence: grounded file transformation only.' }, { role: 'user', content: promptFor(operation, sourceName, text) }]);
+
+  const chunks = splitText(text);
+  const evidence: string[] = [];
+  for (let i = 0; i < chunks.length; i += 1) {
+    const instruction = `حلّل الجزء ${i + 1} من ${chunks.length} من ملف "${sourceName}". استخرج فقط المعلومات اللازمة لتنفيذ المهمة التالية، بدون مقدمات أو معلومات خارج النص. المهمة: ${operationLabels[operation]}. أعد دليلًا موجزًا يصلح للدمج النهائي، بحد أقصى ${AI_EVIDENCE_MAX_CHARS} حرفًا.\n\n${chunks[i]}`;
+    evidence.push(await chat(plan, [{ role: 'system', content: 'QMRMed source-grounded extraction. Never invent facts.' }, { role: 'user', content: instruction }], 0.1));
+  }
+
+  const combinedEvidence = evidence.join('\n\n--- جزء جديد ---\n\n').slice(0, AI_SYNTHESIS_MAX_CHARS);
+  return chat(plan, [{ role: 'system', content: 'QMRMed Lecture Intelligence: synthesize only from the supplied evidence. Do not invent or import outside medical facts.' }, { role: 'user', content: promptFor(operation, sourceName, combinedEvidence) }]);
+}
+
+async function withUserLock<T>(uid: string, task: () => Promise<T>): Promise<T> {
+  const previous = operationLocks.get(uid) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  operationLocks.set(uid, previous.then(() => current));
+  try { await previous; return await task(); }
+  finally { release(); if (operationLocks.get(uid) === current) operationLocks.delete(uid); }
+}
 
 async function createPdf(item: ArchiveItem) {
   const work = join(tmpdir(), `qmrmed-pdf-${randomUUID()}`); await mkdir(work, { recursive: true });
@@ -107,7 +148,16 @@ async function createPdf(item: ArchiveItem) {
 }
 async function sendPdf(ctx: Context, item: ArchiveItem) { if (!item.pdfPath || !existsSync(item.pdfPath)) await createPdf(item); return ctx.replyWithDocument(new InputFile(item.pdfPath!, `${safeName(item.sourceName)}-${item.operation}.pdf`)); }
 async function replyLong(ctx: Context, value: string, markup?: InlineKeyboard) { const limit = 3900; let rest = value; while (rest.length > limit) { let cut = Math.max(rest.lastIndexOf('\n', limit), rest.lastIndexOf(' ', limit)); if (cut < 2000) cut = limit; await ctx.reply(rest.slice(0, cut)); rest = rest.slice(cut).trimStart(); } await ctx.reply(rest || '—', markup ? { reply_markup: markup } : undefined); }
-async function processOperation(ctx: Context, item: ArchiveItem, plan: Plan) { await ctx.reply(`جاري ${operationLabels[item.operation]} من محتوى الملف فقط…`); item.result = await generate(item.operation, plan, item.sourceName, item.text); item.createdAt = new Date().toISOString(); await archive(item); await replyLong(ctx, `تم إنشاء ${operationLabels[item.operation]} من الملف.\n\n${item.result.slice(0, 18_000)}`, resultMenu(item.id)); try { await sendPdf(ctx, item); } catch (error) { await ctx.reply(error instanceof Error ? error.message : String(error)); } }
+async function processOperation(ctx: Context, item: ArchiveItem, plan: Plan) {
+  return withUserLock(item.userId, async () => {
+    await ctx.reply(`جاري ${operationLabels[item.operation]} من محتوى الملف فقط…`);
+    item.result = await generate(item.operation, plan, item.sourceName, item.text);
+    item.createdAt = new Date().toISOString();
+    await archive(item);
+    await replyLong(ctx, `تم إنشاء ${operationLabels[item.operation]} من الملف.\n\n${item.result.slice(0, 18_000)}`, resultMenu(item.id));
+    try { await sendPdf(ctx, item); } catch (error) { await ctx.reply(error instanceof Error ? error.message : String(error)); }
+  });
+}
 
 export function registerFileAiHandlers(bot: Bot) {
   bot.on('message:document', async ctx => {
