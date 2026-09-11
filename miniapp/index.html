@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#08090b" />
+  <meta name="theme-color" content="#05070b" />
+  <meta name="color-scheme" content="dark light" />
   <title>QMRMed</title>
   <link rel="stylesheet" href="/miniapp/styles.css" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -11,18 +12,20 @@
 <body>
   <div id="app" class="app">
     <header class="topbar">
-      <button class="icon-btn" data-action="back" aria-label="رجوع">‹</button>
-      <div class="brand"><div class="brand-mark">🩺</div><div><strong>QMRMed</strong><span>Medical Education</span></div></div>
-      <button class="icon-btn" data-action="menu" aria-label="القائمة">⋮</button>
+      <button class="icon-btn top-action" data-action="back" aria-label="رجوع"><span class="svg-icon" data-icon="back"></span></button>
+      <div class="brand" data-go="home">
+        <div class="brand-mark"><span class="svg-icon" data-icon="medical"></span></div>
+        <div class="brand-copy"><strong>QMRMed</strong><span>For a Smarter Medical Future</span></div>
+      </div>
+      <button class="icon-btn top-action" data-action="menu" aria-label="المزيد"><span class="svg-icon" data-icon="more"></span></button>
     </header>
-
-    <main id="view" class="view"></main>
-
+    <main id="view" class="view" aria-live="polite"></main>
     <nav class="bottom-nav" aria-label="التنقل الرئيسي">
-      <button data-route="home" class="nav-item active"><span>⌂</span><small>الرئيسية</small></button>
-      <button data-route="plans" class="nav-item"><span>♕</span><small>الاشتراك</small></button>
-      <button data-route="settings" class="nav-item"><span>⚙</span><small>الإعدادات</small></button>
-      <button data-route="menu" class="nav-item"><span>☰</span><small>المزيد</small></button>
+      <button data-route="home" class="nav-item active"><span class="nav-icon svg-icon" data-icon="home"></span><small>الرئيسية</small></button>
+      <button data-route="plans" class="nav-item"><span class="nav-icon svg-icon" data-icon="crown"></span><small>الاشتراك</small></button>
+      <button data-route="archive" class="nav-item"><span class="nav-icon svg-icon" data-icon="archive"></span><small>الأرشيف</small></button>
+      <button data-route="account" class="nav-item"><span class="nav-icon svg-icon" data-icon="user"></span><small>حسابي</small></button>
+      <button data-route="menu" class="nav-item"><span class="nav-icon svg-icon" data-icon="menu"></span><small>المزيد</small></button>
     </nav>
   </div>
   <div id="toast" class="toast" role="status"></div>
