@@ -58,7 +58,7 @@ export function contentKind(path: string): ContentKind | null {
   if (segments.some((part) => part.includes('ministerial') || part.includes('وزاري') || part.includes('وزاريات'))) return 'MINISTERIAL';
   if (segments.some((part) => part === 'question bank' || part === 'questions' || part.includes('بنك الأسئلة') || part === 'الأسئلة' || part === 'الاسئلة' || part === 'أسئلة' || part === 'اسئلة')) return 'QUESTION';
   if (segments.some((part) => part === 'cases' || part === 'case' || part.includes('حالات سريرية') || part.includes('الحالات السريرية'))) return 'CASE';
-  if (segments.some((part) => part === 'references' || part === 'reference' || part.includes('مرجع') || part.includes('shared references'))) return 'REFERENCE';
+  if (segments.some((part) => part === 'references' || part === 'reference' || part.includes('مرجع') || part.includes('مراجع') || part.includes('shared references'))) return 'REFERENCE';
   if (segments.some((part) => part === 'sources' || part === 'source' || part.includes('مصادر') || part === 'المصادر')) return 'SOURCE';
   if (segments.some(isMaterialsFolder)) return 'SOURCE';
   return null;
@@ -75,12 +75,6 @@ export function normalizeStage(part: string) {
 
 function canonicalDepartment(part: string) { return DEPARTMENTS[normalizeFolderName(part).toLocaleLowerCase()] ?? null; }
 
-/**
- * Maps the final canonical hierarchy to stable database metadata.
- * Two layouts are supported without ambiguity:
- *   Stage / Subject / Kind / file      -> subject is before kind
- *   Stage / Materials / Subject / file  -> subject is after materials
- */
 export function metadataFromPath(path: string) {
   const parts = normalizedSegments(path).slice(0, -1);
   const departmentIndex = parts.findIndex((part) => canonicalDepartment(part) !== null);
@@ -96,11 +90,7 @@ export function metadataFromPath(path: string) {
       const kindPart = afterStage[kindIndex];
       const beforeKind = afterStage.slice(0, kindIndex);
       const afterKind = afterStage.slice(kindIndex + 1);
-      if (isMaterialsFolder(kindPart)) {
-        subjectName = afterKind[0] ?? null;
-      } else {
-        subjectName = beforeKind[beforeKind.length - 1] ?? null;
-      }
+      subjectName = isMaterialsFolder(kindPart) ? (afterKind[0] ?? null) : (beforeKind[beforeKind.length - 1] ?? null);
     }
   }
 
@@ -135,11 +125,7 @@ export async function syncGoogleDrive() {
   if (!root) throw new Error('Google Drive root folder is empty');
 
   const started = new Date();
-  await db.driveSyncState.upsert({
-    where: { rootFolderId: root },
-    create: { rootFolderId: root, lastRunAt: started, lastError: null },
-    update: { lastRunAt: started, lastError: null },
-  });
+  await db.driveSyncState.upsert({ where: { rootFolderId: root }, create: { rootFolderId: root, lastRunAt: started, lastError: null }, update: { lastRunAt: started, lastError: null } });
 
   try {
     const files = await listDriveFiles(root);
@@ -154,10 +140,7 @@ export async function syncGoogleDrive() {
       if (!kind) { skipped++; continue; }
       currentIds.add(file.id);
 
-      const existing = await db.contentSource.findUnique({
-        where: { driveFileId: file.id },
-        select: { id: true, checksum: true, modifiedTime: true, indexed: true },
-      });
+      const existing = await db.contentSource.findUnique({ where: { driveFileId: file.id }, select: { id: true, checksum: true, modifiedTime: true, indexed: true } });
       const modified = file.modifiedTime ? new Date(file.modifiedTime) : null;
       const unchanged = Boolean(existing?.indexed && existing.checksum === file.md5Checksum && existing.modifiedTime?.getTime() === modified?.getTime());
       if (unchanged) { skipped++; continue; }
@@ -166,80 +149,41 @@ export async function syncGoogleDrive() {
       const meta = metadataFromPath(file.path);
       const source = await db.contentSource.upsert({
         where: { driveFileId: file.id },
-        create: {
-          driveFileId: file.id, name: file.name, mimeType: file.mimeType, webViewLink: file.webViewLink,
-          modifiedTime: modified, checksum: file.md5Checksum, kind, ...meta,
-          approved: config.DRIVE_AUTO_APPROVE, indexed: false,
-        },
-        update: {
-          name: file.name, mimeType: file.mimeType, webViewLink: file.webViewLink,
-          modifiedTime: modified, checksum: file.md5Checksum, kind, ...meta,
-          indexed: false, lastSyncedAt: new Date(),
-        },
+        create: { driveFileId: file.id, name: file.name, mimeType: file.mimeType, webViewLink: file.webViewLink, modifiedTime: modified, checksum: file.md5Checksum, kind, ...meta, approved: config.DRIVE_AUTO_APPROVE, indexed: false },
+        update: { name: file.name, mimeType: file.mimeType, webViewLink: file.webViewLink, modifiedTime: modified, checksum: file.md5Checksum, kind, ...meta, indexed: false, lastSyncedAt: new Date() },
       });
 
       if (!text?.trim()) {
         skipped++;
-        await db.$transaction([
-          db.contentChunk.deleteMany({ where: { sourceId: source.id } }),
-          db.contentSource.update({ where: { id: source.id }, data: { indexed: false } }),
-        ]);
+        await db.$transaction([db.contentChunk.deleteMany({ where: { sourceId: source.id } }), db.contentSource.update({ where: { id: source.id }, data: { indexed: false } })]);
         continue;
       }
 
       const parts = chunkText(text, config.DRIVE_CHUNK_CHARS);
-      const subject = meta.subjectName
-        ? await db.subject.findFirst({ where: { name: meta.subjectName }, select: { id: true } })
-        : null;
+      const subject = meta.subjectName ? await db.subject.findFirst({ where: { name: meta.subjectName }, select: { id: true } }) : null;
 
       await db.$transaction(async (tx) => {
         await tx.contentChunk.deleteMany({ where: { sourceId: source.id } });
-        if (parts.length) {
-          await tx.contentChunk.createMany({
-            data: parts.map((part, i) => ({
-              sourceId: source.id, subjectId: subject?.id, kind, title: file.name,
-              text: part, chunkIndex: i, driveFileId: file.id,
-            })),
-          });
-        }
-        await tx.contentSource.update({
-          where: { id: source.id },
-          data: { indexed: parts.length > 0, lastSyncedAt: new Date() },
-        });
+        if (parts.length) await tx.contentChunk.createMany({ data: parts.map((part, i) => ({ sourceId: source.id, subjectId: subject?.id, kind, title: file.name, text: part, chunkIndex: i, driveFileId: file.id })) });
+        await tx.contentSource.update({ where: { id: source.id }, data: { indexed: parts.length > 0, lastSyncedAt: new Date() } });
       });
 
       indexed++;
       chunks += parts.length;
     }
 
-    if (currentIds.size === 0) {
-      throw new Error('Google Drive scan found no indexable QMRMed files; stale-content cleanup was intentionally skipped. Verify the folder structure before retrying.');
-    }
+    if (currentIds.size === 0) throw new Error('Google Drive scan found no indexable QMRMed files; stale-content cleanup was intentionally skipped. Verify the folder structure before retrying.');
 
-    const stale = await db.contentSource.findMany({
-      where: { driveFileId: { notIn: [...currentIds] }, indexed: true },
-      select: { id: true },
-    });
-
+    const stale = await db.contentSource.findMany({ where: { driveFileId: { notIn: [...currentIds] }, indexed: true }, select: { id: true } });
     for (const source of stale) {
-      await db.$transaction([
-        db.contentChunk.deleteMany({ where: { sourceId: source.id } }),
-        db.contentSource.update({ where: { id: source.id }, data: { indexed: false, approved: false } }),
-      ]);
+      await db.$transaction([db.contentChunk.deleteMany({ where: { sourceId: source.id } }), db.contentSource.update({ where: { id: source.id }, data: { indexed: false, approved: false } })]);
       removed++;
     }
 
-    await db.driveSyncState.update({
-      where: { rootFolderId: root },
-      data: { lastSuccessAt: new Date(), lastError: null, filesSeen: files.length, filesIndexed: indexed },
-    });
-
+    await db.driveSyncState.update({ where: { rootFolderId: root }, data: { lastSuccessAt: new Date(), lastError: null, filesSeen: files.length, filesIndexed: indexed } });
     return { filesSeen: files.length, filesIndexed: indexed, filesSkipped: skipped, filesRemoved: removed, chunks } satisfies SyncResult;
   } catch (error) {
-    await db.driveSyncState.update({
-      where: { rootFolderId: root },
-      data: { lastError: error instanceof Error ? error.message.slice(0, 1000) : String(error).slice(0, 1000) },
-    });
+    await db.driveSyncState.update({ where: { rootFolderId: root }, data: { lastError: error instanceof Error ? error.message.slice(0, 1000) : String(error).slice(0, 1000) } });
     throw error;
   }
 }
