@@ -130,6 +130,7 @@ export async function listDriveFiles(rootFolderId: string) {
   if (!rootId) throw new Error('Google Drive root folder is empty');
   const result: Array<DriveFile & { path: string }> = [];
   const queue: Array<{ id: string; path: string }> = [{ id: rootId, path: '' }];
+  const queuedFolders = new Set<string>([rootId]);
   const visitedFolders = new Set<string>();
   const seenFiles = new Set<string>();
   let foldersScanned = 0;
@@ -155,7 +156,10 @@ export async function listDriveFiles(rootFolderId: string) {
       for (const file of data.files ?? []) {
         const path = current.path ? `${current.path}/${file.name}` : file.name;
         if (file.mimeType === 'application/vnd.google-apps.folder') {
-          if (!visitedFolders.has(file.id)) queue.push({ id: file.id, path });
+          if (!queuedFolders.has(file.id)) {
+            queuedFolders.add(file.id);
+            queue.push({ id: file.id, path });
+          }
         } else if (!seenFiles.has(file.id)) {
           seenFiles.add(file.id);
           result.push({ ...file, path });
