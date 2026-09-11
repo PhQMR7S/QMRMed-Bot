@@ -43,6 +43,7 @@ function base64Url(value: string | Buffer) {
 }
 
 const REQUEST_TIMEOUT_MS = Math.max(5_000, Number(process.env.GOOGLE_DRIVE_REQUEST_TIMEOUT_MS ?? 20_000));
+const REQUEST_RETRIES = 3;
 
 async function accessToken() {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.value;
@@ -82,23 +83,40 @@ async function accessToken() {
   return token.access_token;
 }
 
+function isRetryableStatus(status: number) {
+  return status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+async function delay(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function driveFetch(path: string, init?: RequestInit) {
-  const token = await accessToken();
-  let response: Response;
-  try {
-    response = await fetch(`https://www.googleapis.com/drive/v3${path}`, {
-      ...init,
-      headers: { authorization: `Bearer ${token}`, ...(init?.headers ?? {}) },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-  } catch (error) {
-    throw new Error(`Google Drive request failed or timed out after ${REQUEST_TIMEOUT_MS}ms: ${error instanceof Error ? error.message : String(error)}`);
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= REQUEST_RETRIES; attempt++) {
+    const token = await accessToken();
+    try {
+      const response = await fetch(`https://www.googleapis.com/drive/v3${path}`, {
+        ...init,
+        headers: { authorization: `Bearer ${token}`, ...(init?.headers ?? {}) },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (response.ok) return response;
+      if (!isRetryableStatus(response.status) || attempt === REQUEST_RETRIES) {
+        const raw = await response.text();
+        throw new Error(`Google Drive ${response.status}: ${raw.slice(0, 500)}`);
+      }
+      lastError = new Error(`Google Drive ${response.status}`);
+    } catch (error) {
+      lastError = error;
+      if (error instanceof Error && /^Google Drive (401|403|404)/.test(error.message)) throw error;
+      if (attempt === REQUEST_RETRIES) break;
+    }
+    const waitMs = 500 * 2 ** (attempt - 1);
+    console.log(`    Drive request retry ${attempt}/${REQUEST_RETRIES - 1} in ${waitMs}ms...`);
+    await delay(waitMs);
   }
-  if (!response.ok) {
-    const raw = await response.text();
-    throw new Error(`Google Drive ${response.status}: ${raw.slice(0, 500)}`);
-  }
-  return response;
+  throw new Error(`Google Drive request failed after ${REQUEST_RETRIES} attempts: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
 }
 
 export async function getDriveFile(fileId: string) {
