@@ -125,3 +125,41 @@ export async function listDriveFiles(rootFolderId: string) {
   }
   return result;
 }
+
+async function responseBytes(response: Response) {
+  const buffer = await response.arrayBuffer();
+  return new Uint8Array(buffer);
+}
+
+export async function downloadDriveText(file: DriveFile) {
+  const googleDoc = file.mimeType === 'application/vnd.google-apps.document';
+  const googleSheet = file.mimeType === 'application/vnd.google-apps.spreadsheet';
+  const googleSlides = file.mimeType === 'application/vnd.google-apps.presentation';
+
+  if (googleDoc) {
+    const response = await driveFetch(`/files/${encodeURIComponent(file.id)}/export?mimeType=text/plain`);
+    return response.text();
+  }
+  if (googleSheet) {
+    const response = await driveFetch(`/files/${encodeURIComponent(file.id)}/export?mimeType=text/csv`);
+    return response.text();
+  }
+  if (googleSlides) {
+    const response = await driveFetch(`/files/${encodeURIComponent(file.id)}/export?mimeType=text/plain`);
+    return response.text();
+  }
+
+  if (file.mimeType === 'application/pdf') {
+    const response = await driveFetch(`/files/${encodeURIComponent(file.id)}?alt=media&supportsAllDrives=true`);
+    const bytes = await responseBytes(response);
+    const pdf = await getDocumentProxy(bytes);
+    const result = await extractText(pdf, { mergePages: true });
+    return String(result.text);
+  }
+
+  const supported = new Set(['text/plain', 'text/markdown', 'text/csv', 'application/json']);
+  if (!supported.has(file.mimeType)) return null;
+  const response = await driveFetch(`/files/${encodeURIComponent(file.id)}?alt=media&supportsAllDrives=true`);
+  const bytes = await responseBytes(response);
+  return new TextDecoder().decode(bytes);
+}
