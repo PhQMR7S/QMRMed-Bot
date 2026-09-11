@@ -11,7 +11,6 @@ export async function upsertTelegramUser(from: { id: number; username?: string; 
   });
 }
 
-// File AI still writes its local JSON archive for backward compatibility and PDF workflows.
-// This background synchronizer makes PostgreSQL the durable production archive without changing
-// the existing File AI generation path or risking a breaking rewrite of that module.
-startFileAiArchiveSync(db);
+// Keep the existing local archive as the compatibility/PDF layer while asynchronously
+// mirroring completed records into PostgreSQL for durable production storage.
+if (!process.argv.includes('--test') && process.env.QMRMED_DISABLE_ARCHIVE_SYNC !== '1') startFileAiArchiveSync(db);
