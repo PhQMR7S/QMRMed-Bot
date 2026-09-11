@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdir, readdir, readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -27,10 +27,10 @@ function validateInitData(initData: string): TelegramUser {
   const raw=params.get('user'); if(!raw) throw new Error('Telegram user missing');
   return JSON.parse(raw) as TelegramUser;
 }
-async function auth(req: IncomingMessage) { const user=validateInitData(header(req,'x-telegram-init-data')); const dbUser=await upsertTelegramUser(user); return dbUser; }
+async function auth(req: IncomingMessage) { const user=validateInitData(header(req,'x-telegram-init-data')); return upsertTelegramUser(user); }
 function safeUserDir(userId: string) { return resolve(ARCHIVE_ROOT,userId.replace(/[^a-zA-Z0-9_-]/g,'_')); }
-async function archiveFor(userId: string) { const dir=safeUserDir(userId); await mkdir(dir,{recursive:true}); const names=(await readdir(dir)).filter(n=>n.endsWith('.json')).sort().reverse().slice(0,50); const items:any[]=[]; for(const name of names){try{const item=JSON.parse(await readFile(join(dir,name),'utf8')); items.push({id:item.id,sourceName:item.sourceName,operation:item.operation,operationLabel:operationLabels[item.operation]||item.operation,createdAt:item.createdAt?new Date(item.createdAt).toLocaleString('ar-IQ'): '-',hasResult:Boolean(item.result)});}catch{}} return items; }
-async function archiveDetail(userId:string,id:string){if(!/^[a-zA-Z0-9_-]+$/.test(id)) return null; const file=resolve(safeUserDir(userId),`${id}.json`); if(!file.startsWith(safeUserDir(userId)+`/`)) return null; try{return JSON.parse(await readFile(file,'utf8'));}catch{return null;}}
+async function archiveFor(userId: string) { const dir=safeUserDir(userId); await mkdir(dir,{recursive:true}); const names=(await readdir(dir)).filter(n=>n.endsWith('.json')).sort().reverse().slice(0,50); const items:any[]=[]; for(const name of names){try{const item=JSON.parse(await readFile(join(dir,name),'utf8')); items.push({id:item.id,sourceName:item.sourceName,operation:item.operation,operationLabel:operationLabels[item.operation]||item.operation,createdAt:item.createdAt?new Date(item.createdAt).toLocaleString('ar-IQ'):'-',hasResult:Boolean(item.result)});}catch{}} return items; }
+async function archiveDetail(userId:string,id:string){if(!/^[a-zA-Z0-9_-]+$/.test(id)) return null; const dir=safeUserDir(userId); const file=resolve(dir,`${id}.json`); if(!file.startsWith(dir+'/')) return null; try{return JSON.parse(await readFile(file,'utf8'));}catch{return null;}}
 async function handle(req:IncomingMessage,res:ServerResponse){
   try{
     const url=new URL(req.url||'/',`http://${header(req,'host')||'localhost'}`);
@@ -39,8 +39,10 @@ async function handle(req:IncomingMessage,res:ServerResponse){
     if(req.method!=='GET') return json(res,405,{error:'Method not allowed'});
     const user=await auth(req);
     if(url.pathname==='/api/me'){
-      const [completed,attempts,correct,archive]=await Promise.all([db.progress.count({where:{userId:user.id,completed:true}}),db.attempt.count({where:{userId:user.id}}),db.attempt.count({where:{userId:user.id,correct:true}}),archiveFor(String(user.telegramId))]);
-      const active=user.subscriptions?.find(s=>s.active && s.endsAt>new Date());
+      const [completed,attempts,correct,archive,active]=await Promise.all([
+        db.progress.count({where:{userId:user.id,completed:true}}),db.attempt.count({where:{userId:user.id}}),db.attempt.count({where:{userId:user.id,correct:true}}),archiveFor(String(user.telegramId)),
+        db.subscription.findFirst({where:{userId:user.id,active:true,endsAt:{gt:new Date()}},orderBy:{endsAt:'desc'}})
+      ]);
       return json(res,200,{id:user.id,telegramId:user.telegramId,username:user.username,firstName:user.firstName,lastName:user.lastName,department:user.department,stage:user.stage,plan:user.plan,trialUsed:user.trialUsed,trialEndsAt:user.trialEndsAt,subscriptionEndsAt:active?.endsAt?.toLocaleDateString('ar-IQ')||null,archiveCount:archive.length,progress:{completed,attempts,correct,accuracy:attempts?Math.round(correct/attempts*100):0}});
     }
     if(url.pathname==='/api/plans'){
@@ -55,6 +57,6 @@ async function handle(req:IncomingMessage,res:ServerResponse){
     return json(res,404,{error:'Not found'});
   }catch(error){console.error('Mini App error:',error);return json(res,401,{error:error instanceof Error?error.message:'تعذر التحقق من جلسة Telegram'});}
 }
-async function serveStatic(relative:string,res:ServerResponse){const safe=resolve(STATIC_ROOT,relative);if(!safe.startsWith(STATIC_ROOT+`/`) && safe!==STATIC_ROOT)return json(res,404,{error:'Not found'});const ext=extname(safe);const type=ext==='.html'?'text/html; charset=utf-8':ext==='.css'?'text/css; charset=utf-8':ext==='.js'?'text/javascript; charset=utf-8':'application/octet-stream';try{res.writeHead(200,{'content-type':type,'cache-control':'no-cache'});createReadStream(safe).pipe(res).on('error',()=>res.end());}catch{json(res,404,{error:'Not found'});}}
+async function serveStatic(relative:string,res:ServerResponse){const safe=resolve(STATIC_ROOT,relative);if(!safe.startsWith(STATIC_ROOT+'/') && safe!==STATIC_ROOT)return json(res,404,{error:'Not found'});const ext=extname(safe);const type=ext==='.html'?'text/html; charset=utf-8':ext==='.css'?'text/css; charset=utf-8':ext==='.js'?'text/javascript; charset=utf-8':'application/octet-stream';try{res.writeHead(200,{'content-type':type,'cache-control':'no-cache'});createReadStream(safe).pipe(res).on('error',()=>res.end());}catch{json(res,404,{error:'Not found'});}}
 
 export function startMiniApp(){const server=createServer(handle);server.listen(MINI_APP_PORT,MINI_APP_HOST,()=>console.log(`QMRMed Mini App listening on http://${MINI_APP_HOST}:${MINI_APP_PORT}`));return server;}
