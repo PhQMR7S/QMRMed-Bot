@@ -26,29 +26,7 @@
     </nav>
   </div>
   <div id="toast" class="toast" role="status"></div>
-  <script>
-    (()=>{
-      const allowed=new Set(['home','plans','archive','account','menu','settings','about','subscription']);
-      const params=new URLSearchParams(location.search);
-      const tg=window.Telegram?.WebApp;
-      const candidate=params.get('route')||tg?.initDataUnsafe?.start_param||'home';
-      const route=allowed.has(candidate)?candidate:'home';
-      window.__QMRMED_DEEP_ROUTE__=route;
-      if(route!=='home') document.documentElement.dataset.qmrmedRoute=route;
-    })();
-  </script>
   <script src="/miniapp/app.js"></script>
-  <script>
-    (()=>{
-      const route=window.__QMRMED_DEEP_ROUTE__||'home';
-      const target=route==='subscription'?'plans':route;
-      if(target==='home')return;
-      const run=()=>{const el=document.querySelector(`.nav-item[data-route="${target}"]`);if(el){el.click();return true}return false};
-      if(run())return;
-      const observer=new MutationObserver(()=>{if(run())observer.disconnect()});
-      observer.observe(document.getElementById('app'),{childList:true,subtree:true});
-      setTimeout(()=>observer.disconnect(),5000);
-    })();
-  </script>
+  <script src="/miniapp/bootstrap.js"></script>
 </body>
 </html>
