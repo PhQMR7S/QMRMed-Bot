@@ -1,5 +1,8 @@
 import { Bot } from 'grammy';
 import { registerFileAiHandlers } from './file-ai.js';
+import { startMiniApp } from './miniapp.js';
+
+startMiniApp();
 
 const originalStart = Bot.prototype.start as (...args: any[]) => Promise<void>;
 const registered = new WeakSet<object>();
