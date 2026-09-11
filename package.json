@@ -9,7 +9,7 @@
     "prebuild": "prisma generate",
     "build": "tsc -p tsconfig.json",
     "start": "node --import ./dist/src/file-ai-preload.js dist/src/index.js",
-    "start:miniapp": "node dist/src/miniapp-server.js",
+    "start:miniapp": "NODE_ENV=production node dist/src/miniapp-server.js",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
@@ -31,7 +31,6 @@
     "@types/node": "^24.3.0",
     "prisma": "^6.19.3",
     "tsx": "^4.19.2",
-    "typescript": "^5.9.2"
-  },
-  "overrides": { "deepmerge-ts": "^8.0.2" }
+    "overrides": { "deepmerge-ts": "^8.0.2" }
+  }
 }
