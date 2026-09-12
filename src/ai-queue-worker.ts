@@ -15,7 +15,10 @@ export async function processNextAiJob(workerId: string) {
     const willRetry = job.attempts < job.maxAttempts;
     await failJob(job.id, workerId, 'WORKER_ERROR', message, true);
 
-    if (!willRetry && job.fileId) {
+    // A post-ingestion job (analysis/result) must never invalidate a file
+    // that has already been extracted and indexed. Only ingestion failures
+    // are allowed to transition the file itself to FAILED.
+    if (!willRetry && job.fileId && job.type === 'FILE_INGESTION') {
       await db.file.updateMany({
         where: { id: job.fileId, status: { not: 'DELETED' } },
         data: { status: 'FAILED', errorCode: 'WORKER_ERROR', errorMessage: message.slice(0, 2000) },
