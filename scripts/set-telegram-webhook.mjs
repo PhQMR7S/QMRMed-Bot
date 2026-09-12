@@ -6,10 +6,11 @@ if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') {
 }
 
 const token = process.env.BOT_TOKEN?.trim();
-const baseUrl = process.env.MINI_APP_URL?.trim().replace(/\/$/, '');
+const configuredUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() || process.env.MINI_APP_URL?.trim();
+const baseUrl = configuredUrl ? (/^https:\/\//i.test(configuredUrl) ? configuredUrl : `https://${configuredUrl}`).replace(/\/$/, '') : '';
 
 if (!token) throw new Error('BOT_TOKEN is required to configure Telegram webhook');
-if (!baseUrl || !/^https:\/\//i.test(baseUrl)) throw new Error('MINI_APP_URL must be an HTTPS URL');
+if (!baseUrl || !/^https:\/\//i.test(baseUrl)) throw new Error('A valid production HTTPS URL is required to configure Telegram webhook');
 
 const webhookUrl = `${baseUrl}/api/telegram`;
 const secretToken = createHash('sha256').update(token).digest('hex');
@@ -29,4 +30,17 @@ if (!response.ok || !result.ok) {
   throw new Error(`Telegram setWebhook failed: ${result.description ?? response.statusText}`);
 }
 
-console.log(`Telegram webhook configured: ${webhookUrl}`);
+const verifyResponse = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
+const verifyResult = await verifyResponse.json();
+if (!verifyResponse.ok || !verifyResult.ok) {
+  throw new Error(`Telegram getWebhookInfo failed: ${verifyResult.description ?? verifyResponse.statusText}`);
+}
+
+const info = verifyResult.result;
+if (info.url !== webhookUrl) {
+  throw new Error(`Telegram webhook verification failed: expected ${webhookUrl}, got ${info.url || '(empty)'}`);
+}
+if (info.last_error_message) {
+  console.warn(`Telegram webhook reports a previous delivery error: ${info.last_error_message}`);
+}
+console.log(`Telegram webhook verified: ${webhookUrl}`);
