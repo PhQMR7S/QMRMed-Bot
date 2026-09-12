@@ -34,11 +34,7 @@ const optionalUrl = z.preprocess((value) => {
   if (typeof value !== 'string') return value;
   const trimmed = value.trim();
   if (!trimmed) return undefined;
-  try {
-    return new URL(trimmed).toString();
-  } catch {
-    return undefined;
-  }
+  try { return new URL(trimmed).toString(); } catch { return undefined; }
 }, z.string().url().optional());
 
 const env = z.object({
@@ -46,7 +42,6 @@ const env = z.object({
   DATABASE_URL: z.string().min(1),
   ADMIN_IDS: z.string().default(''),
 
-  // Optional integrations must never prevent Telegram itself from starting.
   OMNIROUTE_URL: optionalUrl.default('http://127.0.0.1:20128'),
   OMNIROUTE_API_KEY: nonEmptyString,
   OMNIROUTE_MODEL: z.string().default('auto'),
@@ -83,8 +78,8 @@ const env = z.object({
 
   PAYMENT_PROVIDER: z.string().default('telegram_stars'),
   SUPPORT_HANDLE: z.string().default(''),
-  MASTERCARD_ACCOUNT: z.string().default('8268627075'),
-  ZAINCASH_NUMBER: z.string().default('07829774639'),
+  MASTERCARD_ACCOUNT: z.string().default(''),
+  ZAINCASH_NUMBER: z.string().default(''),
   CRYPTO_PAYMENT_NOTE: z.string().default('العملات الرقمية عبر محفظة تيليجرام — قريبًا.'),
   TRIAL_ENABLED: booleanFromEnv.default(true),
   TRIAL_DAYS: positiveInt(7),
@@ -92,7 +87,7 @@ const env = z.object({
   GOOGLE_DRIVE_ROOT_FOLDER_ID: nonEmptyString,
   GOOGLE_SERVICE_ACCOUNT_JSON: nonEmptyString,
   GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: nonEmptyString,
-  DRIVE_AUTO_APPROVE: booleanFromEnv.default(true),
+  DRIVE_AUTO_APPROVE: booleanFromEnv.default(false),
   DRIVE_CHUNK_CHARS: boundedInt(6000, 1000, 20_000),
 }).parse(process.env);
 
