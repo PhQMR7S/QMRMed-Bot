@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Bot, webhookCallback } from 'grammy';
-import { registerFileAiV2Handlers } from '../src/file-ai-v2.js';
+import { registerFileAiV3Handlers } from '../src/file-ai-v3.js';
 
 let botInstance: Bot | undefined;
 let startHook: ((info: unknown) => void | Promise<void>) | undefined;
@@ -18,7 +18,7 @@ await import('../src/index.js');
 
 if (!botInstance) throw new Error('QMRMed bot instance was not initialized');
 const bot = botInstance;
-registerFileAiV2Handlers(bot);
+registerFileAiV3Handlers(bot);
 
 const secretToken = createHash('sha256').update(bot.token).digest('hex');
 const handleUpdate = webhookCallback(bot, 'http', { secretToken, timeoutMilliseconds: 9_000 });
@@ -41,7 +41,6 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     res.end('Method Not Allowed');
     return;
   }
-
   const suppliedSecret = req.headers['x-telegram-bot-api-secret-token'];
   const received = Array.isArray(suppliedSecret) ? suppliedSecret[0] : suppliedSecret;
   if (received !== secretToken) {
@@ -49,7 +48,6 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     res.end('Unauthorized');
     return;
   }
-
   await initializeBot();
   return handleUpdate(req, res);
 }
