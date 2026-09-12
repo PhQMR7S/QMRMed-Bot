@@ -13,8 +13,24 @@ function isLegacyExamFilter(filter: unknown) {
 }
 
 function isTelegramNoOp(error: unknown) {
-  if (!(error instanceof GrammyError)) return false;
-  return error.error_code === 400 && /message is not modified/i.test(error.description);
+  const text = error instanceof GrammyError
+    ? `${error.description} ${error.message}`
+    : error instanceof Error
+      ? error.message
+      : String(error);
+
+  return /(?:message is not modified|query is too old and response timeout expired or query ID is invalid)/i.test(text);
+}
+
+function telegramNoOpReason(error: unknown) {
+  const text = error instanceof GrammyError
+    ? `${error.description} ${error.message}`
+    : error instanceof Error
+      ? error.message
+      : String(error);
+  if (/message is not modified/i.test(text)) return 'message_not_modified';
+  if (/query is too old and response timeout expired or query ID is invalid/i.test(text)) return 'callback_query_expired';
+  return 'telegram_idempotent_noop';
 }
 
 let botInstance: Bot | undefined;
@@ -77,7 +93,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return await handleUpdate(req, res);
   } catch (error) {
     if (isTelegramNoOp(error)) {
-      console.info(JSON.stringify({ event: 'telegram_webhook_noop', reason: 'message_not_modified' }));
+      console.info(JSON.stringify({ event: 'telegram_webhook_noop', reason: telegramNoOpReason(error) }));
       if (!res.headersSent) {
         res.statusCode = 200;
         res.end('OK');
