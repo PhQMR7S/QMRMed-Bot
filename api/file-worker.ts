@@ -1,5 +1,5 @@
 import { claimNextJob, completeJob, failJob } from '../src/ai-jobs.js';
-import { processFileJob } from '../src/file-ai-v2.js';
+import { processFileJob } from '../src/file-ai-v4.js';
 import { db } from '../src/db.js';
 
 export const maxDuration = 300;
@@ -17,7 +17,7 @@ export default async function handler(req: any, res: any) {
   const job = await claimNextJob(workerId);
   if (!job) return res.status(200).json({ ok: true, processed: false, message: 'NO_JOB' });
   try {
-    await processFileJob({ id: job.id, lockedBy: workerId, type: job.type, fileId: job.fileId ?? '', payload: job.payload });
+    await processFileJob({ type: job.type, fileId: job.fileId ?? '', payload: job.payload });
     await completeJob(job.id, workerId, { ok: true });
     return res.status(200).json({ ok: true, processed: true, jobId: job.id, type: job.type });
   } catch (error) {
