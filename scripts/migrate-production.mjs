@@ -13,7 +13,17 @@ function run(args) {
   });
 }
 
-const first = await run(['migrate', 'deploy']);
+async function runWithRetry(args, attempts = 4, delayMs = 5000) {
+  let code = 1;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    code = await run(args);
+    if (code === 0) return 0;
+    if (attempt < attempts) await new Promise(resolve => setTimeout(resolve, delayMs));
+  }
+  return code;
+}
+
+const first = await runWithRetry(['migrate', 'deploy']);
 if (first === 0) process.exit(0);
 
 // GitHub CI uses a disposable PostgreSQL service. It has no production schema,
@@ -40,5 +50,5 @@ try {
   await rm(bootstrapFile, { force: true });
 }
 
-const resolve = await run(['migrate', 'resolve', '--schema', 'prisma/schema.prisma', '--applied', migration]);
+const resolve = await runWithRetry(['migrate', 'resolve', '--schema', 'prisma/schema.prisma', '--applied', migration]);
 process.exit(resolve);
