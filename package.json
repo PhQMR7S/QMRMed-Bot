@@ -9,7 +9,7 @@
     "dev": "tsx --import ./src/file-ai-preload.ts src/index.ts",
     "prebuild": "prisma generate",
     "build": "tsc -p tsconfig.json",
-    "vercel-build": "prisma generate && prisma migrate deploy && npm run check && node scripts/prepare-vercel.mjs && node scripts/set-telegram-webhook.mjs",
+    "vercel-build": "prisma generate && node scripts/migrate-production.mjs && npm run check && node scripts/prepare-vercel.mjs && node scripts/set-telegram-webhook.mjs",
     "start": "node --import ./dist/src/file-ai-preload.js dist/src/index.js",
     "start:miniapp": "NODE_ENV=production node dist/src/miniapp-server.js",
     "db:generate": "prisma generate",
