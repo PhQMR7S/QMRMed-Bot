@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
 
+if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== 'production') {
+  console.log(`Skipping Telegram webhook configuration for Vercel ${process.env.VERCEL_ENV} deployment.`);
+  process.exit(0);
+}
+
 const token = process.env.BOT_TOKEN?.trim();
 const baseUrl = process.env.MINI_APP_URL?.trim().replace(/\/$/, '');
 
