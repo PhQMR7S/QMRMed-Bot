@@ -1,13 +1,13 @@
 import { claimNextJob, completeJob, failJob } from '../src/ai-jobs.js';
 import { processFileJob } from '../src/file-ai-v2.js';
+import { db } from '../src/db.js';
 
 export const maxDuration = 300;
 
 function authorized(req: any) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return process.env.NODE_ENV !== 'production';
-  const header = String(req.headers?.authorization ?? '');
-  return header === `Bearer ${secret}`;
+  return String(req.headers?.authorization ?? '') === `Bearer ${secret}`;
 }
 
 export default async function handler(req: any, res: any) {
@@ -22,7 +22,13 @@ export default async function handler(req: any, res: any) {
     return res.status(200).json({ ok: true, processed: true, jobId: job.id, type: job.type });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const willRetry = job.attempts < job.maxAttempts;
     await failJob(job.id, workerId, 'WORKER_ERROR', message, true);
-    return res.status(500).json({ ok: false, processed: true, jobId: job.id, error: message });
+    if (!willRetry && job.fileId) await db.file.updateMany({ where: { id: job.fileId, status: { not: 'DELETED' } }, data: { status: 'FAILED', errorCode: 'WORKER_ERROR', errorMessage: message.slice(0, 2000) } });
+    if (!willRetry && job.type === 'FILE_RESULT' && typeof job.payload === 'object' && job.payload && 'operationId' in job.payload) {
+      const operationId = String((job.payload as { operationId?: unknown }).operationId ?? '');
+      if (operationId) await db.fileOperation.updateMany({ where: { id: operationId, status: { in: ['QUEUED', 'RUNNING'] } }, data: { status: 'FAILED', errorCode: 'WORKER_ERROR', errorMessage: message.slice(0, 2000), completedAt: new Date() } });
+    }
+    return res.status(500).json({ ok: false, processed: true, jobId: job.id, error: message, willRetry });
   }
 }
