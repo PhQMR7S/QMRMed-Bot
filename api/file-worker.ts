@@ -24,7 +24,9 @@ export default async function handler(req: any, res: any) {
     const message = error instanceof Error ? error.message : String(error);
     const willRetry = job.attempts < job.maxAttempts;
     await failJob(job.id, workerId, 'WORKER_ERROR', message, true);
-    if (!willRetry && job.fileId) await db.file.updateMany({ where: { id: job.fileId, status: { not: 'DELETED' } }, data: { status: 'FAILED', errorCode: 'WORKER_ERROR', errorMessage: message.slice(0, 2000) } });
+    if (!willRetry && job.fileId && job.type === 'FILE_INGESTION') {
+      await db.file.updateMany({ where: { id: job.fileId, status: { not: 'DELETED' } }, data: { status: 'FAILED', errorCode: 'WORKER_ERROR', errorMessage: message.slice(0, 2000) } });
+    }
     if (!willRetry && job.type === 'FILE_RESULT' && typeof job.payload === 'object' && job.payload && 'operationId' in job.payload) {
       const operationId = String((job.payload as { operationId?: unknown }).operationId ?? '');
       if (operationId) await db.fileOperation.updateMany({ where: { id: operationId, status: { in: ['QUEUED', 'RUNNING'] } }, data: { status: 'FAILED', errorCode: 'WORKER_ERROR', errorMessage: message.slice(0, 2000), completedAt: new Date() } });
