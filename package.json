@@ -4,19 +4,18 @@
   "private": true,
   "description": "Standalone QMRMed Telegram learning bot",
   "type": "module",
-  "engines": {
-    "node": "24.x"
-  },
+  "engines": { "node": "24.x" },
   "scripts": {
     "dev": "tsx --import ./src/file-ai-preload.ts src/index.ts",
     "prebuild": "prisma generate",
     "build": "tsc -p tsconfig.json",
-    "vercel-build": "prisma generate && npm run db:push:deploy && npm run check && node scripts/prepare-vercel.mjs && node scripts/set-telegram-webhook.mjs",
+    "vercel-build": "prisma generate && prisma migrate deploy && npm run check && node scripts/prepare-vercel.mjs && node scripts/set-telegram-webhook.mjs",
     "start": "node --import ./dist/src/file-ai-preload.js dist/src/index.js",
     "start:miniapp": "NODE_ENV=production node dist/src/miniapp-server.js",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:push:deploy": "prisma db push --skip-generate",
+    "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "content:sync": "tsx src/sync-drive.ts",
     "check-drive": "tsx scripts/check-drive.ts",
