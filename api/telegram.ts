@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Bot, webhookCallback } from 'grammy';
+import { registerFileAiAskBridge } from '../src/file-ai-ask-bridge.js';
 import { registerFileAiV3Handlers } from '../src/file-ai-v3.js';
 
 let botInstance: Bot | undefined;
@@ -18,6 +19,7 @@ await import('../src/index.js');
 
 if (!botInstance) throw new Error('QMRMed bot instance was not initialized');
 const bot = botInstance;
+registerFileAiAskBridge(bot);
 registerFileAiV3Handlers(bot);
 
 const secretToken = createHash('sha256').update(bot.token).digest('hex');
