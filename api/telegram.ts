@@ -30,7 +30,6 @@ await import('../src/index.js');
 (Bot.prototype as any).callbackQuery = originalCallbackQuery;
 if (!botInstance) throw new Error('QMRMed bot instance was not initialized');
 const bot = botInstance;
-installTelegramCustomEmoji(bot);
 registerFileAiAskBridge(bot);
 registerFileAiV4Handlers(bot);
 registerDurableExamHandlers(bot);
@@ -41,7 +40,11 @@ async function initializeBot() {
   if (!initialized) initialized = (async () => {
     console.log(JSON.stringify({ event: 'telegram_webhook_initializing' }));
     await bot.init();
+    // IMPORTANT: load the catalog before installing the API transformer.
+    // getStickerSet must bypass our outgoing-message transformer; installing it
+    // first causes recursive transformer -> loadCatalog -> getStickerSet calls.
     await preloadTelegramCustomEmojiCatalog(bot);
+    installTelegramCustomEmoji(bot);
     if (startHook) await startHook(bot.botInfo);
     console.log(JSON.stringify({ event: 'telegram_webhook_initialized', username: bot.botInfo.username }));
   })();
