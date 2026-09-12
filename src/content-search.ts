@@ -21,12 +21,85 @@ function normalizeText(value: string) {
     .replace(/ى/g, 'ي')
     .replace(/ؤ/g, 'و')
     .replace(/ئ/g, 'ي')
-    .replace(/ة/g, 'ه')
     .replace(/[ًٌٍَُِّْـ]/g, '')
     .replace(/[.,!?;:()[\]{}<>"'`~@#$%^&*+=|\\/\-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+const MEDICAL_ALIASES: Record<string, string[]> = {
+  'فشل القلب': ['heart failure', 'cardiac failure', 'congestive heart failure', 'CHF'],
+  'قصور القلب': ['heart failure', 'cardiac failure', 'congestive heart failure', 'CHF'],
+  'احتشاء عضلة القلب': ['myocardial infarction', 'acute myocardial infarction', 'MI', 'heart attack'],
+  'جلطة قلبية': ['myocardial infarction', 'acute myocardial infarction', 'MI', 'heart attack'],
+  'الذبحة الصدرية': ['angina', 'angina pectoris', 'ischemic chest pain'],
+  'ارتفاع ضغط الدم': ['hypertension', 'high blood pressure'],
+  'انخفاض ضغط الدم': ['hypotension', 'low blood pressure'],
+  'السكري': ['diabetes mellitus', 'diabetes', 'DM'],
+  'داء السكري': ['diabetes mellitus', 'diabetes', 'DM'],
+  'الحماض الكيتوني السكري': ['diabetic ketoacidosis', 'DKA'],
+  'نقص سكر الدم': ['hypoglycemia', 'low blood glucose'],
+  'ارتفاع سكر الدم': ['hyperglycemia', 'high blood glucose'],
+  'إصابة الكلى الحادة': ['acute kidney injury', 'acute renal injury', 'AKI'],
+  'الفشل الكلوي الحاد': ['acute kidney failure', 'acute kidney injury', 'AKI'],
+  'المتلازمة النفروزية': ['nephrotic syndrome'],
+  'المتلازمة النفريتية': ['nephritic syndrome'],
+  'مرض الانسداد الرئوي المزمن': ['chronic obstructive pulmonary disease', 'COPD'],
+  'الربو': ['asthma', 'bronchial asthma'],
+  'ذات الرئة': ['pneumonia'],
+  'الالتهاب الرئوي': ['pneumonia'],
+  'الانسداد الرئوي': ['pulmonary embolism', 'PE'],
+  'الخثار الوريدي العميق': ['deep vein thrombosis', 'DVT'],
+  'الرجفان الأذيني': ['atrial fibrillation', 'AF', 'AFib'],
+  'التهاب الشغاف': ['endocarditis', 'infective endocarditis'],
+  'التهاب عضلة القلب': ['myocarditis'],
+  'التهاب التامور': ['pericarditis'],
+  'السكتة الدماغية': ['stroke', 'cerebrovascular accident', 'CVA'],
+  'التهاب السحايا': ['meningitis'],
+  'التهاب الدماغ': ['encephalitis'],
+  'الصرع': ['epilepsy', 'seizure disorder'],
+  'فقر الدم': ['anemia', 'anaemia'],
+  'فقر الدم بعوز الحديد': ['iron deficiency anemia', 'iron deficiency anaemia'],
+  'ابيضاض الدم': ['leukemia', 'leukaemia'],
+  'سرطان الثدي': ['breast cancer', 'breast carcinoma'],
+  'سرطان الرئة': ['lung cancer', 'lung carcinoma'],
+  'قصور الغدة الدرقية': ['hypothyroidism'],
+  'فرط نشاط الغدة الدرقية': ['hyperthyroidism'],
+  'فرط الدرقية': ['hyperthyroidism', 'thyrotoxicosis'],
+  'قصور الدرقية': ['hypothyroidism'],
+  'الحمى': ['fever', 'pyrexia'],
+  'الإنتان': ['sepsis', 'septic syndrome'],
+  'الصدمة الإنتانية': ['septic shock'],
+  'الجفاف': ['dehydration'],
+  'التهاب البنكرياس': ['pancreatitis', 'acute pancreatitis'],
+  'التهاب الكبد': ['hepatitis'],
+  'تشمع الكبد': ['cirrhosis', 'liver cirrhosis'],
+  'القرحة الهضمية': ['peptic ulcer disease', 'peptic ulcer'],
+  'التهاب الزائدة الدودية': ['appendicitis'],
+  'التهاب المرارة': ['cholecystitis'],
+  'حصى المرارة': ['cholelithiasis', 'gallstones'],
+  'التهاب المسالك البولية': ['urinary tract infection', 'UTI'],
+  'التهاب المثانة': ['cystitis'],
+  'التهاب الكلية والحويضة': ['pyelonephritis'],
+  'هشاشة العظام': ['osteoporosis'],
+  'التهاب المفاصل الروماتويدي': ['rheumatoid arthritis', 'RA'],
+  'الذئبة': ['systemic lupus erythematosus', 'SLE', 'lupus'],
+  'مرض باركنسون': ['Parkinson disease', 'Parkinson\'s disease'],
+  'الزهايمر': ['Alzheimer disease', 'Alzheimer\'s disease'],
+  'الصداع النصفي': ['migraine'],
+  'التهاب السحايا': ['meningitis'],
+  'المضادات الحيوية': ['antibiotics', 'antibacterial agents'],
+  'المضاد الحيوي': ['antibiotic', 'antibacterial agent'],
+  'الدواء': ['drug', 'medication'],
+  'الأعراض': ['symptoms', 'clinical manifestations'],
+  'التشخيص': ['diagnosis', 'diagnostic'],
+  'العلاج': ['treatment', 'management', 'therapy'],
+  'الوقاية': ['prevention', 'prophylaxis'],
+  'الآلية المرضية': ['pathophysiology', 'pathogenesis'],
+  'الوبائيات': ['epidemiology'],
+  'عوامل الخطورة': ['risk factors'],
+  'المضاعفات': ['complications'],
+};
 
 function termsOf(query: string) {
   const raw = query
@@ -37,7 +110,17 @@ function termsOf(query: string) {
     .filter((term, index, all) => all.indexOf(term) === index)
     .slice(0, 12);
   const normalized = raw.map(normalizeText).filter(Boolean);
-  return Array.from(new Set([...raw, ...normalized])).slice(0, 20);
+  const aliases = Object.entries(MEDICAL_ALIASES)
+    .filter(([ar]) => normalizeText(query).includes(normalizeText(ar)))
+    .flatMap(([, values]) => values);
+  return Array.from(new Set([...raw, ...normalized, ...aliases])).slice(0, 40);
+}
+
+export function expandMedicalQuery(query: string) {
+  const aliases = Object.entries(MEDICAL_ALIASES)
+    .filter(([ar]) => normalizeText(query).includes(normalizeText(ar)))
+    .flatMap(([, values]) => values);
+  return Array.from(new Set([query, ...aliases])).join(' | ');
 }
 
 export async function searchApprovedContent(query: string, options?: {
@@ -74,9 +157,11 @@ export async function searchApprovedContent(query: string, options?: {
       const haystack = normalizeText(`${chunk.title} ${chunk.text}`);
       let score = 0;
       for (const term of normalizedTerms) {
-        const occurrences = haystack.split(term).length - 1;
+        const normalizedTerm = normalizeText(term);
+        if (!normalizedTerm) continue;
+        const occurrences = haystack.split(normalizedTerm).length - 1;
         score += occurrences;
-        if (normalizeText(chunk.title).includes(term)) score += 5;
+        if (normalizeText(chunk.title).includes(normalizedTerm)) score += 5;
       }
       return { chunk, score };
     })
