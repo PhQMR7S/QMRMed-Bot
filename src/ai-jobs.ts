@@ -21,19 +21,27 @@ export async function enqueueJob(input: EnqueueJobInput) {
   });
   if (existing) return existing;
 
-  return db.aIJob.create({
-    data: {
-      id: randomUUID(),
-      userId: input.userId,
-      type: input.type,
-      idempotencyKey: input.idempotencyKey,
-      fileId: input.fileId,
-      analysisId: input.analysisId,
-      payload: input.payload,
-      maxAttempts: input.maxAttempts ?? 3,
-      availableAt: input.availableAt ?? new Date(),
-    },
-  });
+  try {
+    return await db.aIJob.create({
+      data: {
+        id: randomUUID(),
+        userId: input.userId,
+        type: input.type,
+        idempotencyKey: input.idempotencyKey,
+        fileId: input.fileId,
+        analysisId: input.analysisId,
+        payload: input.payload,
+        maxAttempts: input.maxAttempts ?? 3,
+        availableAt: input.availableAt ?? new Date(),
+      },
+    });
+  } catch (error) {
+    const raced = await db.aIJob.findUnique({
+      where: { userId_idempotencyKey: { userId: input.userId, idempotencyKey: input.idempotencyKey } },
+    });
+    if (raced) return raced;
+    throw error;
+  }
 }
 
 export async function claimNextJob(workerId: string, now = new Date()) {
@@ -44,11 +52,18 @@ export async function claimNextJob(workerId: string, now = new Date()) {
         { status: 'QUEUED', availableAt: { lte: now } },
         { status: 'RUNNING', heartbeatAt: { lt: staleBefore } },
       ],
-      attempts: { lt: 3 },
     },
     orderBy: [{ availableAt: 'asc' }, { createdAt: 'asc' }],
   });
   if (!candidate) return null;
+
+  if (candidate.attempts >= candidate.maxAttempts) {
+    await db.aIJob.updateMany({
+      where: { id: candidate.id, status: candidate.status },
+      data: { status: 'FAILED', errorCode: 'MAX_ATTEMPTS', errorMessage: 'Maximum retry attempts reached.', completedAt: now, lockedBy: null, lockedAt: null, heartbeatAt: null },
+    });
+    return null;
+  }
 
   const claimed = await db.aIJob.updateMany({
     where: {
@@ -87,7 +102,7 @@ export async function heartbeatJob(jobId: string, workerId: string, progress?: n
 export async function completeJob(jobId: string, workerId: string, result?: Prisma.InputJsonValue) {
   return db.aIJob.updateMany({
     where: { id: jobId, status: 'RUNNING', lockedBy: workerId },
-    data: { status: 'COMPLETED', progress: 100, result, completedAt: new Date(), heartbeatAt: null },
+    data: { status: 'COMPLETED', progress: 100, result, completedAt: new Date(), heartbeatAt: null, lockedBy: null, lockedAt: null },
   });
 }
 
