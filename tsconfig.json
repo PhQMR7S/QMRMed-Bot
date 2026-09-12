@@ -10,5 +10,6 @@
     "rootDir": ".",
     "noEmitOnError": true
   },
-  "include": ["src/**/*.ts", "api/**/*.ts", "prisma/**/*.ts"]
+  "include": ["src/**/*.ts", "api/**/*.ts", "prisma/**/*.ts"],
+  "exclude": ["src/file-ai-v2.ts"]
 }
