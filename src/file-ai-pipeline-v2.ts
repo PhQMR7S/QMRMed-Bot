@@ -1,0 +1,95 @@
+import { randomUUID } from 'node:crypto';
+import type { FileOperationType } from '@prisma/client';
+import { db } from './db.js';
+import { enqueueJob } from './ai-jobs.js';
+import { routedChat } from './ai-routing.js';
+
+const FAN_IN = 6;
+const MAP_LIMIT = 1800;
+const REDUCE_LIMIT = 2600;
+const TG_LIMIT = 3900;
+
+export type FilePipelineJob = { id: string; type: string; fileId: string; payload: unknown };
+export type FilePipelinePayload = { stage?: 'plan' | 'map' | 'reduce'; kind?: 'analysis' | 'result'; operationId?: string; chunkId?: string; sourceJobIds?: string[]; final?: boolean };
+
+const labels: Record<FileOperationType, string> = {
+  EXPLAIN:'شرح', SUMMARY:'تلخيص', QA:'أسئلة وأجوبة', MCQ:'MCQ', TRUE_FALSE:'صح/خطأ', FILL_BLANK:'أكمل الفراغ', MATCHING:'مطابقة', CASES:'حالات سريرية', VIVA:'Viva', MIND_MAP:'خريطة ذهنية', FLOWCHART:'مخطط انسيابي', COMPARISON:'مقارنة', TIMELINE:'خط زمني', DIAGNOSTIC:'خوارزمية تشخيصية', EXAM:'اختبار تجريبي', ASK_FILE:'اسأل الملف'
+};
+const tasks: Record<FileOperationType, string> = {
+  EXPLAIN:'اشرح المحتوى أكاديميًا وبشكل منظم.', SUMMARY:'أنشئ ملخصًا عالي العائد يغطي كامل الملف.', QA:'أنشئ أسئلة وأجوبة تغطي أهم معلومات كامل الملف.', MCQ:'أنشئ 20 سؤال MCQ بأربعة خيارات مع الإجابة والتفسير.', TRUE_FALSE:'أنشئ 20 صح/خطأ مع الإجابة والتفسير.', FILL_BLANK:'أنشئ 20 سؤال أكمل الفراغ مع الإجابة.', MATCHING:'أنشئ أسئلة مطابقة مع مفتاح الإجابة.', CASES:'أنشئ 8 حالات سريرية تعليمية مبنية فقط على الملف.', VIVA:'أنشئ أسئلة Viva مع إجابات نموذجية.', MIND_MAP:'حوّل المحتوى إلى خريطة ذهنية هرمية.', FLOWCHART:'حوّل الخوارزميات إلى مخطط انسيابي نصي.', COMPARISON:'استخرج أهم المقارنات في الملف.', TIMELINE:'استخرج التسلسل الزمني أو المراحل.', DIAGNOSTIC:'أنشئ خوارزمية تشخيصية من الملف فقط.', EXAM:'أنشئ اختبارًا تجريبيًا من 30 سؤالًا مع مفتاح الإجابة والتفسير.', ASK_FILE:'أجب عن سؤال المستخدم اعتمادًا على الملف فقط.'
+};
+
+function clip(text:string,max:number){return text.length>max?`${text.slice(0,max-1)}…`:text;}
+function groups<T>(items:T[],size:number){const out:T[][]=[];for(let i=0;i<items.length;i+=size)out.push(items.slice(i,i+size));return out;}
+function telegramParts(text:string){const out:string[]=[];let rest=text.trim();while(rest.length>TG_LIMIT){let cut=Math.max(rest.lastIndexOf('\n',TG_LIMIT),rest.lastIndexOf(' ',TG_LIMIT));if(cut<TG_LIMIT*.6)cut=TG_LIMIT;out.push(rest.slice(0,cut));rest=rest.slice(cut).trimStart();}if(rest)out.push(rest);return out.length?out:[''];}
+async function sendTelegram(chatId:string,text:string){for(const part of telegramParts(text)){const r=await fetch(`https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:chatId,text:part})});if(!r.ok)console.warn(JSON.stringify({event:'file_ai_result_send_failed',status:r.status}));}}
+
+async function createTree(userId:number,fileId:string,type:'FILE_ANALYSIS'|'FILE_RESULT',kind:'analysis'|'result',chunkIds:string[],base:FilePipelinePayload){
+  if(!chunkIds.length)throw new Error('PIPELINE_NO_INPUTS');
+  let ids=(await Promise.all(chunkIds.map(chunkId=>enqueueJob({userId,type,fileId,idempotencyKey:`${kind}:map:${base.operationId??fileId}:${chunkId}`,payload:{...base,stage:'map',kind,chunkId}})))).map(j=>j.id);
+  while(ids.length>1){
+    const next:string[][]=groups(ids,FAN_IN);
+    const jobs=await Promise.all(next.map(sourceJobIds=>enqueueJob({userId,type,fileId,idempotencyKey:`${kind}:reduce:${base.operationId??fileId}:${sourceJobIds.join('.')}`,payload:{...base,stage:'reduce',kind,sourceJobIds,final:next.length===1}})));
+    ids=jobs.map(j=>j.id);
+  }
+  return ids[0];
+}
+
+async function mapAnalysis(job:FilePipelineJob,p:FilePipelinePayload){
+  const chunk=await db.fileChunk.findUnique({where:{id:p.chunkId!},select:{text:true,pageStart:true,pageEnd:true}});if(!chunk)throw new Error('CHUNK_NOT_FOUND');
+  const file=await db.file.findUnique({where:{id:job.fileId},include:{user:true}});if(!file)throw new Error('FILE_NOT_FOUND');
+  const text=await routedChat('study',file.user.plan,[
+    {role:'system',content:'QMRMed Document Intelligence. Extract only facts explicitly supported by this document chunk. Preserve medical terminology and page range. Be concise.'},
+    {role:'user',content:`Pages ${chunk.pageStart??'?'}-${chunk.pageEnd??'?'}\nExtract key concepts, definitions, classifications, mechanisms, clinical points, algorithms, tables and high-yield exam facts. Do not invent missing information.\n\n${chunk.text}`}
+  ],0.1);
+  await db.aIJob.update({where:{id:job.id},data:{result:{text:clip(text,MAP_LIMIT),pageStart:chunk.pageStart,pageEnd:chunk.pageEnd},stage:'MAP_COMPLETE',progress:100}});
+}
+
+async function mapResult(job:FilePipelineJob,p:FilePipelinePayload){
+  const [op,chunk]=await Promise.all([db.fileOperation.findUnique({where:{id:p.operationId!},include:{file:true,user:true}}),db.fileChunk.findUnique({where:{id:p.chunkId!},select:{text:true,pageStart:true,pageEnd:true}})]);if(!op||!chunk)throw new Error('PIPELINE_INPUT_NOT_FOUND');
+  const question=typeof op.parameters==='object'&&op.parameters?String((op.parameters as {question?:unknown}).question??''):'';
+  const text=await routedChat('study',op.user.plan,[
+    {role:'system',content:'QMRMed File AI. Work only from this document chunk. Do not invent facts. Produce concise candidate material for later synthesis and preserve page references.'},
+    {role:'user',content:`Task: ${tasks[op.type]}\n${question?`User question: ${question}\n`:''}Pages ${chunk.pageStart??'?'}-${chunk.pageEnd??'?'}\n\n${chunk.text}`}
+  ],0.1);
+  await db.aIJob.update({where:{id:job.id},data:{result:{text:clip(text,MAP_LIMIT),pageStart:chunk.pageStart,pageEnd:chunk.pageEnd},stage:'MAP_COMPLETE',progress:100}});
+}
+
+async function reduce(job:FilePipelineJob,p:FilePipelinePayload){
+  const ids=p.sourceJobIds??[];if(!ids.length)throw new Error('PIPELINE_NO_SOURCES');
+  const sources=await db.aIJob.findMany({where:{id:{in:ids}},select:{id:true,status:true,result:true}});
+  if(sources.length!==ids.length||sources.some(s=>s.status==='QUEUED'||s.status==='RUNNING'))return {defer:true};
+  if(sources.some(s=>s.status==='FAILED'||s.status==='CANCELLED'))throw new Error('PIPELINE_SOURCE_FAILED');
+  const evidence=sources.map((s,i)=>{const r=s.result&&typeof s.result==='object'?s.result as {text?:unknown,pageStart?:unknown,pageEnd?:unknown}:{};return `[المصدر ${i+1} | الصفحات ${r.pageStart??'?'}-${r.pageEnd??'?'}]\n${String(r.text??'')}`;}).join('\n\n---\n\n');
+  if(p.kind==='analysis'){
+    const file=await db.file.findUnique({where:{id:job.fileId},include:{user:true}});if(!file)throw new Error('FILE_NOT_FOUND');
+    const text=await routedChat('study',file.user.plan,[{role:'system',content:'QMRMed Document Intelligence reducer. Merge only supplied evidence. Preserve important distinctions and do not add outside knowledge.'},{role:'user',content:`Create a compact structured knowledge map from these evidence units.\n\n${clip(evidence,24000)}`}],0.1);
+    await db.aIJob.update({where:{id:job.id},data:{result:{text:clip(text,REDUCE_LIMIT)},stage:p.final?'FINAL_READY':'REDUCE_COMPLETE',progress:100}});
+    if(p.final)await finalizeAnalysis(job,p,text);
+    return;
+  }
+  const op=await db.fileOperation.findUnique({where:{id:p.operationId!},include:{file:true,user:true}});if(!op)throw new Error('OPERATION_NOT_FOUND');
+  const text=await routedChat('study',op.user.plan,[{role:'system',content:'QMRMed File AI reducer. Merge only supplied candidate material from the uploaded file. Remove duplication, preserve factual fidelity and never add outside medical facts.'},{role:'user',content:`Task: ${tasks[op.type]}\n\n${clip(evidence,24000)}`}],0.1);
+  await db.aIJob.update({where:{id:job.id},data:{result:{text:clip(text,REDUCE_LIMIT)},stage:p.final?'FINAL_READY':'REDUCE_COMPLETE',progress:100}});
+  if(p.final)await finalizeResult(job,p,text);
+}
+
+async function finalizeAnalysis(job:FilePipelineJob,p:FilePipelinePayload,text:string){
+  const file=await db.file.findUnique({where:{id:job.fileId},include:{user:true}});if(!file)throw new Error('FILE_NOT_FOUND');
+  const previous=await db.fileAnalysis.findFirst({where:{fileId:job.fileId},orderBy:{version:'desc'},select:{version:true}});
+  await db.fileAnalysis.create({data:{id:randomUUID(),fileId:job.fileId,version:(previous?.version??0)+1,summary:text,documentMap:{pages:file.pageCount,chunks:await db.fileChunk.count({where:{fileId:job.fileId}}),pipeline:'hierarchical-map-reduce'},topicMap:{generated:true},evidenceIndex:{pipeline:'map-reduce-tree'},language:'auto',model:'routed-study'}});
+}
+
+async function finalizeResult(job:FilePipelineJob,p:FilePipelinePayload,text:string){
+  const op=await db.fileOperation.findUnique({where:{id:p.operationId!},include:{file:true,user:true}});if(!op)throw new Error('OPERATION_NOT_FOUND');
+  const resultId=randomUUID();const chunks=await db.fileChunk.findMany({where:{fileId:op.fileId},orderBy:{chunkIndex:'asc'},select:{id:true,pageStart:true,pageEnd:true}});
+  await db.$transaction(async tx=>{await tx.fileResult.create({data:{id:resultId,operationId:op.id,version:1,title:labels[op.type],content:text,model:'routed-study'}});for(const c of chunks)await tx.citation.create({data:{id:randomUUID(),resultId,kind:'FILE_CHUNK',chunkId:c.id,pageNumber:c.pageStart??undefined,locator:c.pageStart?`pages:${c.pageStart}-${c.pageEnd??c.pageStart}`:undefined}});await tx.fileOperation.update({where:{id:op.id},data:{status:'COMPLETED',progress:100,completedAt:new Date(),errorCode:null,errorMessage:null}});});
+  await sendTelegram(op.user.telegramId,`📄 ${labels[op.type]} — ${op.file.originalName}\n\n${text}`);
+}
+
+async function planAnalysis(job:FilePipelineJob){const file=await db.file.findUnique({where:{id:job.fileId},select:{userId:true}});if(!file)throw new Error('FILE_NOT_FOUND');const chunks=await db.fileChunk.findMany({where:{fileId:job.fileId},orderBy:{chunkIndex:'asc'},select:{id:true}});const root=await createTree(file.userId,job.fileId,'FILE_ANALYSIS','analysis',chunks.map(c=>c.id),{});await db.aIJob.update({where:{id:job.id},data:{result:{rootJobId:root,chunks:chunks.length},stage:'TREE_CREATED',progress:100}});}
+async function planResult(job:FilePipelineJob,p:FilePipelinePayload){const op=await db.fileOperation.findUnique({where:{id:p.operationId!},select:{userId:true,fileId:true}});if(!op)throw new Error('OPERATION_NOT_FOUND');const chunks=await db.fileChunk.findMany({where:{fileId:op.fileId},orderBy:{chunkIndex:'asc'},select:{id:true}});const root=await createTree(op.userId,op.fileId,'FILE_RESULT','result',chunks.map(c=>c.id),{operationId:op.id});await db.fileOperation.updateMany({where:{id:op.id,status:'QUEUED'},data:{status:'RUNNING',progress:10,startedAt:new Date(),jobId:job.id}});await db.aIJob.update({where:{id:job.id},data:{result:{rootJobId:root,chunks:chunks.length},stage:'TREE_CREATED',progress:100}});}
+
+export async function processFilePipelineJob(job:FilePipelineJob){const p=(job.payload??{}) as FilePipelinePayload;if(job.type==='FILE_ANALYSIS'){if(p.stage==='plan')return planAnalysis(job);if(p.stage==='map'&&p.chunkId)return mapAnalysis(job,p);if(p.stage==='reduce')return reduce(job,p);}if(job.type==='FILE_RESULT'){if(p.stage==='plan'&&p.operationId)return planResult(job,p);if(p.stage==='map'&&p.chunkId&&p.operationId)return mapResult(job,p);if(p.stage==='reduce')return reduce(job,p);}throw new Error(`UNSUPPORTED_PIPELINE_STAGE:${job.type}:${p.stage??'none'}`);}
+export function operationLabel(type:FileOperationType){return labels[type];}
+export function operationTask(type:FileOperationType){return tasks[type];}
