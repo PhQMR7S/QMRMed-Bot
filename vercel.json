@@ -2,5 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "buildCommand": "npm run vercel-build",
-  "outputDirectory": "public"
+  "outputDirectory": "public",
+  "crons": [
+    { "path": "/api/file-worker", "schedule": "* * * * *" }
+  ],
+  "functions": {
+    "api/file-worker.ts": { "maxDuration": 300 }
+  }
 }
