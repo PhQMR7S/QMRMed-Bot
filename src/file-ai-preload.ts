@@ -1,5 +1,5 @@
 import { Bot } from 'grammy';
-import { registerFileAiHandlers } from './file-ai.js';
+import { registerFileAiV2Handlers } from './file-ai-v2.js';
 import { startMiniApp } from './miniapp.js';
 
 startMiniApp();
@@ -10,7 +10,7 @@ const registered = new WeakSet<object>();
 Bot.prototype.start = function patchedStart(this: Bot, ...args: any[]) {
   if (!registered.has(this)) {
     registered.add(this);
-    registerFileAiHandlers(this);
+    registerFileAiV2Handlers(this);
   }
   return originalStart.apply(this, args);
 };
