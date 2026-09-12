@@ -1,5 +1,6 @@
 import { db } from './db.js';
 import { config } from './config.js';
+import { getEffectivePlan, isWithinWindow } from './entitlements.js';
 
 export function isAdmin(telegramId: number | string) {
   return config.adminIds.has(String(telegramId));
@@ -9,12 +10,7 @@ export function isActiveSubscription(
   subscription: { active: boolean; startsAt: Date; endsAt: Date } | null | undefined,
   now = new Date(),
 ) {
-  return Boolean(
-    subscription &&
-      subscription.active &&
-      subscription.startsAt <= now &&
-      subscription.endsAt > now,
-  );
+  return isWithinWindow(subscription, now);
 }
 
 export async function ensureTrial(userId: number) {
@@ -34,23 +30,5 @@ export async function ensureTrial(userId: number) {
 }
 
 export async function hasPremiumAccess(userId: number) {
-  const user = await db.user.findUniqueOrThrow({ where: { id: userId } });
-  const now = new Date();
-
-  if (user.trialEndsAt && user.trialEndsAt > now) return true;
-  if (user.plan === 'FREE') return false;
-
-  const activeSubscription = await db.subscription.findFirst({
-    where: {
-      userId,
-      plan: user.plan,
-      active: true,
-      startsAt: { lte: now },
-      endsAt: { gt: now },
-    },
-    select: { active: true, startsAt: true, endsAt: true },
-    orderBy: { endsAt: 'desc' },
-  });
-
-  return isActiveSubscription(activeSubscription, now);
+  return (await getEffectivePlan(userId)) !== 'FREE';
 }
