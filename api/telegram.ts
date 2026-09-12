@@ -1,10 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Bot, webhookCallback } from 'grammy';
+import { registerFileAiV2Handlers } from '../src/file-ai-v2.js';
 
-// Reuse the existing QMRMed bot graph without duplicating any handlers.
-// The existing src/index.ts calls bot.start() at the end; on Vercel we intercept
-// that one transport call, capture the same Bot instance, and feed it webhooks.
 let botInstance: Bot | undefined;
 let startHook: ((info: unknown) => void | Promise<void>) | undefined;
 
@@ -20,6 +18,8 @@ await import('../src/index.js');
 
 if (!botInstance) throw new Error('QMRMed bot instance was not initialized');
 const bot = botInstance;
+registerFileAiV2Handlers(bot);
+
 const secretToken = createHash('sha256').update(bot.token).digest('hex');
 const handleUpdate = webhookCallback(bot, 'http', { secretToken, timeoutMilliseconds: 9_000 });
 
