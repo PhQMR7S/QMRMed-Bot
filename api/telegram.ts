@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { Bot, webhookCallback } from 'grammy';
+import { Bot, GrammyError, webhookCallback } from 'grammy';
 import { registerFileAiAskBridge } from '../src/file-ai-ask-bridge.js';
 import { registerFileAiV4Handlers } from '../src/file-ai-v4.js';
 import { registerDurableExamHandlers } from '../src/durable-exam-telegram.js';
@@ -10,6 +10,11 @@ function isLegacyExamFilter(filter: unknown) {
   if (typeof filter === 'string') return filter === 'exams' || filter.startsWith('ans:') || filter.startsWith('quiz:');
   if (filter instanceof RegExp) return /ans|quiz/i.test(filter.source);
   return false;
+}
+
+function isTelegramNoOp(error: unknown) {
+  if (!(error instanceof GrammyError)) return false;
+  return error.error_code === 400 && /message is not modified/i.test(error.description);
 }
 
 let botInstance: Bot | undefined;
@@ -71,6 +76,14 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     await initializeBot();
     return await handleUpdate(req, res);
   } catch (error) {
+    if (isTelegramNoOp(error)) {
+      console.info(JSON.stringify({ event: 'telegram_webhook_noop', reason: 'message_not_modified' }));
+      if (!res.headersSent) {
+        res.statusCode = 200;
+        res.end('OK');
+      }
+      return;
+    }
     console.error(JSON.stringify({
       event: 'telegram_webhook_failed',
       error: error instanceof Error ? error.message : String(error),
