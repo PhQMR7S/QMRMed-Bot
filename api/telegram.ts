@@ -2,24 +2,21 @@ import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Bot, webhookCallback } from 'grammy';
 
-// The existing bot module contains the complete QMRMed handler graph and starts
-// long polling at the end. For Vercel we intercept only that transport call,
-// capture the same Bot instance, and expose it through grammY's HTTP webhook
-// adapter. No command, callback, payment, AI, quiz, admin, or DB handler is
-// duplicated here.
+// Reuse the existing QMRMed bot graph without duplicating any handlers.
+// The existing src/index.ts calls bot.start() at the end; on Vercel we intercept
+// that one transport call, capture the same Bot instance, and feed it webhooks.
 let botInstance: Bot | undefined;
 let startHook: ((info: unknown) => void | Promise<void>) | undefined;
 
-const botPrototype = Bot.prototype as Bot['__proto__'] & { start: unknown };
-const originalStart = (botPrototype as any).start;
-(botPrototype as any).start = function (options?: { onStart?: (info: unknown) => void | Promise<void> }) {
+const originalStart = (Bot.prototype as any).start;
+(Bot.prototype as any).start = function (options?: { onStart?: (info: unknown) => void | Promise<void> }) {
   botInstance = this as Bot;
   startHook = options?.onStart;
   return Promise.resolve();
 };
 
 await import('../src/index.js');
-(botPrototype as any).start = originalStart;
+(Bot.prototype as any).start = originalStart;
 
 if (!botInstance) throw new Error('QMRMed bot instance was not initialized');
 const bot = botInstance;
