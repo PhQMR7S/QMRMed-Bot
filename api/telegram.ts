@@ -16,7 +16,11 @@ let botInstance: Bot | undefined;
 let startHook: ((info: unknown) => void | Promise<void>) | undefined;
 const originalStart = (Bot.prototype as any).start;
 const originalCallbackQuery = (Bot.prototype as any).callbackQuery;
-(Bot.prototype as any).start = function (options?: { onStart?: (info: unknown) => void | Promise<void> }) { botInstance = this as Bot; startHook = options?.onStart; return Promise.resolve(); };
+(Bot.prototype as any).start = function (options?: { onStart?: (info: unknown) => void | Promise<void> }) {
+  botInstance = this as Bot;
+  startHook = options?.onStart;
+  return Promise.resolve();
+};
 (Bot.prototype as any).callbackQuery = function (filter: unknown, ...args: unknown[]) {
   if (isLegacyExamFilter(filter)) return this;
   return originalCallbackQuery.call(this, filter, ...args);
@@ -35,17 +39,42 @@ const handleUpdate = webhookCallback(bot, 'http', { secretToken, timeoutMillisec
 let initialized: Promise<void> | undefined;
 async function initializeBot() {
   if (!initialized) initialized = (async () => {
+    console.log(JSON.stringify({ event: 'telegram_webhook_initializing' }));
     await bot.init();
     await preloadTelegramCustomEmojiCatalog(bot);
     if (startHook) await startHook(bot.botInfo);
+    console.log(JSON.stringify({ event: 'telegram_webhook_initialized', username: bot.botInfo.username }));
   })();
   return initialized;
 }
+
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
-  if (req.method !== 'POST') { res.statusCode = 405; res.setHeader('Allow', 'POST'); res.end('Method Not Allowed'); return; }
+  console.log(JSON.stringify({ event: 'telegram_webhook_request', method: req.method }));
+  if (req.method !== 'POST') {
+    res.statusCode = 405;
+    res.setHeader('Allow', 'POST');
+    res.end('Method Not Allowed');
+    return;
+  }
   const suppliedSecret = req.headers['x-telegram-bot-api-secret-token'];
   const received = Array.isArray(suppliedSecret) ? suppliedSecret[0] : suppliedSecret;
-  if (received !== secretToken) { res.statusCode = 401; res.end('Unauthorized'); return; }
-  await initializeBot();
-  return handleUpdate(req, res);
+  if (received !== secretToken) {
+    console.warn(JSON.stringify({ event: 'telegram_webhook_unauthorized' }));
+    res.statusCode = 401;
+    res.end('Unauthorized');
+    return;
+  }
+  try {
+    await initializeBot();
+    return await handleUpdate(req, res);
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: 'telegram_webhook_failed',
+      error: error instanceof Error ? error.message : String(error),
+    }));
+    if (!res.headersSent) {
+      res.statusCode = 500;
+      res.end('Internal Server Error');
+    }
+  }
 }
