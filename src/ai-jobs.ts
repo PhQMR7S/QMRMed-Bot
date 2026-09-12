@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { AIJobStatus, AIJobType, Prisma } from '@prisma/client';
 import { db } from './db.js';
+import { publishAiJob } from './vercel-queue.js';
 
 export const JOB_LEASE_MS = 60_000;
 
@@ -19,10 +20,16 @@ export async function enqueueJob(input: EnqueueJobInput) {
   const existing = await db.aIJob.findUnique({
     where: { userId_idempotencyKey: { userId: input.userId, idempotencyKey: input.idempotencyKey } },
   });
-  if (existing) return existing;
+  if (existing) {
+    if (existing.status === 'QUEUED' && existing.availableAt <= new Date()) {
+      await publishAiJob(existing.id, existing.idempotencyKey).catch(() => undefined);
+    }
+    return existing;
+  }
 
+  let job;
   try {
-    return await db.aIJob.create({
+    job = await db.aIJob.create({
       data: {
         id: randomUUID(),
         userId: input.userId,
@@ -42,6 +49,16 @@ export async function enqueueJob(input: EnqueueJobInput) {
     if (raced) return raced;
     throw error;
   }
+
+  if (job.availableAt <= new Date()) {
+    try {
+      await publishAiJob(job.id, job.idempotencyKey);
+    } catch (error) {
+      console.error(JSON.stringify({ event: 'ai_job_publish_failed', jobId: job.id, type: job.type, error: error instanceof Error ? error.message : String(error) }));
+      throw error;
+    }
+  }
+  return job;
 }
 
 export async function claimNextJob(workerId: string, now = new Date()) {
@@ -106,23 +123,39 @@ export async function completeJob(jobId: string, workerId: string, result?: Pris
   });
 }
 
+export async function deferJob(jobId: string, workerId: string, afterSeconds = 5) {
+  const availableAt = new Date(Date.now() + Math.max(1, Math.min(300, afterSeconds)) * 1000);
+  const updated = await db.aIJob.updateMany({
+    where: { id: jobId, status: 'RUNNING', lockedBy: workerId },
+    data: { status: 'QUEUED', availableAt, lockedBy: null, lockedAt: null, heartbeatAt: null, errorCode: null, errorMessage: null },
+  });
+  if (updated.count === 1) {
+    const job = await db.aIJob.findUnique({ where: { id: jobId }, select: { id: true, idempotencyKey: true } });
+    if (job) await publishAiJob(job.id, job.idempotencyKey);
+  }
+  return updated;
+}
+
 export async function failJob(jobId: string, workerId: string, errorCode: string, errorMessage: string, retry = true) {
   const job = await db.aIJob.findUnique({ where: { id: jobId } });
   if (!job || job.status !== 'RUNNING' || job.lockedBy !== workerId) return 0;
   const shouldRetry = retry && job.attempts < job.maxAttempts;
-  return db.aIJob.updateMany({
+  const availableAt = new Date(Date.now() + Math.min(60_000, 2 ** job.attempts * 1000));
+  const updated = await db.aIJob.updateMany({
     where: { id: jobId, status: 'RUNNING', lockedBy: workerId },
     data: {
       status: shouldRetry ? 'QUEUED' : 'FAILED',
       errorCode,
       errorMessage: errorMessage.slice(0, 2000),
-      availableAt: shouldRetry ? new Date(Date.now() + Math.min(60_000, 2 ** job.attempts * 1000)) : job.availableAt,
+      availableAt: shouldRetry ? availableAt : job.availableAt,
       lockedBy: null,
       lockedAt: null,
       heartbeatAt: null,
       ...(shouldRetry ? {} : { completedAt: new Date() }),
     },
   });
+  if (shouldRetry && updated.count === 1) await publishAiJob(job.id, job.idempotencyKey).catch(() => undefined);
+  return updated.count;
 }
 
 export async function cancelJob(jobId: string, userId: number) {
