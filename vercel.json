@@ -4,6 +4,16 @@
   "buildCommand": "npm run vercel-build",
   "outputDirectory": "public",
   "functions": {
-    "api/file-worker.ts": { "maxDuration": 300 }
+    "api/file-worker.ts": { "maxDuration": 300 },
+    "api/ai-queue.ts": {
+      "maxDuration": 300,
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "qmrmed-ai",
+          "retryAfterSeconds": 60
+        }
+      ]
+    }
   }
 }
