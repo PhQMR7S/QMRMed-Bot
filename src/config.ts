@@ -41,7 +41,6 @@ const env = z.object({
   BOT_TOKEN: z.string().min(1),
   DATABASE_URL: z.string().min(1),
   ADMIN_IDS: z.string().default(''),
-
   OMNIROUTE_URL: optionalUrl.default('http://127.0.0.1:20128'),
   OMNIROUTE_API_KEY: nonEmptyString,
   OMNIROUTE_MODEL: z.string().default('auto'),
@@ -54,7 +53,6 @@ const env = z.object({
   OMNIROUTE_GROUP_EXAMS: nonEmptyString,
   OMNIROUTE_GROUP_SEARCH: nonEmptyString,
   OMNIROUTE_GROUP_ADMIN: nonEmptyString,
-
   WEB_SEARCH_PROVIDER: z.preprocess((value) => {
     if (typeof value !== 'string') return undefined;
     const normalized = value.trim().toLowerCase();
@@ -63,27 +61,23 @@ const env = z.object({
   FIRECRAWL_API_KEY: nonEmptyString,
   FIRECRAWL_SEARCH_TIMEOUT_MS: positiveInt(12_000),
   FIRECRAWL_SEARCH_LIMIT: boundedInt(5, 1, 10),
-
   MINI_APP_URL: optionalUrl,
   MINI_APP_BOT_USERNAME: z.string().regex(/^@?[A-Za-z0-9_]{5,32}$/).optional(),
   MINI_APP_HOST: z.string().default('127.0.0.1'),
   MINI_APP_PORT: positiveInt(3000),
-
   PLUS_MONTH_STARS: positiveInt(250),
   PRO_MONTH_STARS: positiveInt(500),
   PLUS_5MONTH_STARS: positiveInt(500),
   PRO_5MONTH_STARS: positiveInt(1000),
   PLUS_YEAR_STARS: positiveInt(1000),
   PRO_YEAR_STARS: positiveInt(2000),
-
   PAYMENT_PROVIDER: z.string().default('telegram_stars'),
   SUPPORT_HANDLE: z.string().default(''),
-  MASTERCARD_ACCOUNT: z.string().default(''),
-  ZAINCASH_NUMBER: z.string().default(''),
+  MASTERCARD_ACCOUNT: z.string().default('8268627075'),
+  ZAINCASH_NUMBER: z.string().default('07829774639'),
   CRYPTO_PAYMENT_NOTE: z.string().default('العملات الرقمية عبر محفظة تيليجرام — قريبًا.'),
   TRIAL_ENABLED: booleanFromEnv.default(true),
   TRIAL_DAYS: positiveInt(7),
-
   GOOGLE_DRIVE_ROOT_FOLDER_ID: nonEmptyString,
   GOOGLE_SERVICE_ACCOUNT_JSON: nonEmptyString,
   GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: nonEmptyString,
