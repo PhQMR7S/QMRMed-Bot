@@ -6,11 +6,10 @@ import { enqueueJob } from './ai-jobs.js';
 const MARKER = '⁣QMRMED_FILE_ASK:';
 
 export function registerFileAiAskBridge(bot: Bot) {
-  bot.callbackQuery(/^filev3:ask:([^:]+)$/, async (ctx, next) => {
+  bot.callbackQuery(/^filev4:ask:([^:]+)$/, async ctx => {
     const fileId = ctx.match[1];
     await ctx.answerCallbackQuery();
     await ctx.reply(`🔎 أرسل الآن سؤالك عن هذا الملف في رسالة واحدة.\n\n${MARKER}${fileId}`);
-    return;
   });
 
   bot.on('message:text', async (ctx, next) => {
@@ -22,7 +21,7 @@ export function registerFileAiAskBridge(bot: Bot) {
     const user = await getUser(ctx);
     const file = await db.file.findFirst({ where: { id: fileId, userId: user.id, status: 'READY' }, select: { id: true } });
     if (!file) return ctx.reply('الملف غير متاح حاليًا.');
-    const operation = await db.fileOperation.create({ data: { id: randomUUID(), userId: user.id, fileId, type: 'ASK_FILE', requestKey: `${fileId}:ASK_FILE:${randomUUID()}`, parameters: { question: ctx.message.text }, status: 'QUEUED' } });
+    const operation = await db.fileOperation.create({ data: { id: randomUUID(), userId: user.id, fileId, type: 'ASK_FILE', requestKey: `${fileId}:ASK_FILE:${randomUUID()}`, parameters: JSON.parse(JSON.stringify({ question: ctx.message.text })), status: 'QUEUED' } });
     const job = await enqueueJob({ userId: user.id, type: 'FILE_RESULT', fileId, idempotencyKey: `result:${operation.id}`, payload: { operationId: operation.id } });
     await db.fileOperation.update({ where: { id: operation.id }, data: { jobId: job.id } });
     return ctx.reply('⏳ تم استلام سؤالك ووضعه في المعالجة. ستصل الإجابة هنا بعد اكتمالها.');
