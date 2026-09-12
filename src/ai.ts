@@ -1,5 +1,4 @@
-import { config } from './config.js';
-import { formatRetrievedContext, searchApprovedContent } from './content-search.js';
+import { formatRetrievedContext, searchApprovedContent, expandMedicalQuery } from './content-search.js';
 import { searchMedicalSources } from './web-search.js';
 import { routedChat } from './ai-routing.js';
 import type { AISection } from './ai-routing.js';
@@ -18,6 +17,12 @@ function cleanAiAnswer(text: string) {
     .trim();
 }
 
+function answerLanguage(question: string) {
+  const arabic = (question.match(/[\u0600-\u06ff]/g) || []).length;
+  const latin = (question.match(/[A-Za-z]/g) || []).length;
+  return arabic >= latin ? 'العربية' : 'English';
+}
+
 export function hasSufficientGroundedContext(context: string, minimumChars = 1_000) {
   return context.trim().length >= minimumChars;
 }
@@ -34,8 +39,9 @@ export async function answerMedicalQuestion(
 ) {
   const section = options?.section ?? 'study';
   const plan = options?.plan ?? 'FREE';
+  const retrievalQuery = expandMedicalQuery(question);
 
-  const driveItems = await searchApprovedContent(question, {
+  const driveItems = await searchApprovedContent(retrievalQuery, {
     take: 12,
     department: options?.department,
     stage: options?.stage,
@@ -44,7 +50,7 @@ export async function answerMedicalQuestion(
 
   const driveContext = formatRetrievedContext(driveItems, 12_000);
   const useDriveContext = driveItems.length > 0 && hasSufficientGroundedContext(driveContext);
-  const webResults = useDriveContext ? [] : await searchMedicalSources(question, undefined, 3);
+  const webResults = useDriveContext ? [] : await searchMedicalSources(retrievalQuery, undefined, 3);
 
   const webContext = webResults.length
     ? (() => {
@@ -66,9 +72,12 @@ export async function answerMedicalQuestion(
 
   const context = useDriveContext ? driveContext : webContext;
   if (!context) {
-    return 'لم أجد محتوى معتمدًا من QMRMed أو مصادر طبية ويب مناسبة مرتبطًا بسؤالك. جرّب كلمات أكثر تحديدًا أو غيّر القسم/المرحلة.';
+    return answerLanguage(question) === 'English'
+      ? 'I could not find approved QMRMed content or suitable medical web sources for this question. Try a more specific medical term or select the relevant section/stage.'
+      : 'لم أجد محتوى معتمدًا من QMRMed أو مصادر طبية ويب مناسبة مرتبطًا بسؤالك. جرّب استخدام المصطلح الطبي بشكل أكثر تحديدًا أو اختر القسم/المرحلة المناسبة.';
   }
 
+  const language = answerLanguage(question);
   const sourceInstruction = useDriveContext
     ? 'المصادر الأساسية التالية مسترجعة مباشرة من ملفات QMRMed المعتمدة في Google Drive. اعتمد عليها أولًا، ولا تستخدم الويب إذا كانت كافية.'
     : driveItems.length
@@ -80,7 +89,8 @@ export async function answerMedicalQuestion(
       role: 'system',
       content: [
         'أنت المساعد الدراسي الطبي في QMRMed.',
-        'أجب بالعربية الطبية الواضحة والسليمة، وكن دقيقًا ومنظمًا ومختصرًا نسبيًا.',
+        `أجب باللغة نفسها التي استخدمها الطالب في السؤال: ${language}. إذا كان السؤال عربيًا فأجب بالعربية الطبية الواضحة، وإذا كان إنجليزيًا فأجب بإنجليزية طبية واضحة.`,
+        'افهم المصطلحات الطبية العربية والإنجليزية والاختصارات الطبية على أنها قد تشير إلى المفهوم نفسه.',
         'استخدم عناوين واضحة وقوائم ونقاط وجداول عند الحاجة لتحسين سهولة القراءة.',
         sourceInstruction,
         'لا تضف معلومات من معرفتك العامة إذا لم يدعمها السياق المسترجع.',
@@ -88,8 +98,7 @@ export async function answerMedicalQuestion(
         'ممنوع استخدام Markdown links داخل الإجابة.',
         'ممنوع كتابة عبارات مثل المصدر أو المراجع أو References أو Sources داخل الإجابة.',
         'لا تكرر اسم الموقع أو عنوان المصدر داخل الإجابة؛ سيضيف النظام المصادر المستخدمة برمجيًا في نهاية الرد.',
-        'اكتب العربية بصورة طبيعية وسليمة. ترجم العبارات الإنجليزية العادية إلى العربية، ولا تُبقِ الإنجليزية إلا لاختصار أو مصطلح طبي ضروري.',
-        'إذا كان النص المسترجع مشوهًا أو غير مكتمل، أعد صياغته عربيًا اعتمادًا على المعنى المدعوم فقط.',
+        'إذا كان النص المسترجع مشوهًا أو غير مكتمل، أعد صياغته اعتمادًا على المعنى المدعوم فقط.',
         'إذا كان السؤال يطلب Case أو أسئلة وزارية، استخرجها أو لخّصها من المحتوى المسترجع ولا تنشئ سؤالًا وزاريًا من عندك.',
         'إذا كان السياق غير كافٍ، اذكر ذلك بوضوح بدل التخمين.',
         'هذا مساعد تعليمي وليس بديلًا عن الطبيب أو التشخيص الفردي.',
