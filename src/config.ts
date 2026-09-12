@@ -1,7 +1,14 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
-dotenv.config({ override: true });
+dotenv.config({ override: false });
+
+const nonEmptyString = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : trimmed;
+}, z.string().min(1).optional());
+
 const booleanFromEnv = z.preprocess((value) => {
   if (typeof value === 'boolean') return value;
   if (typeof value !== 'string') return value;
@@ -10,14 +17,86 @@ const booleanFromEnv = z.preprocess((value) => {
   if (['false', '0', 'no', 'off', ''].includes(normalized)) return false;
   return value;
 }, z.boolean());
+
+const positiveInt = (fallback: number) => z.preprocess((value) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}, z.number().int().positive());
+
+const boundedInt = (fallback: number, min: number, max: number) => z.preprocess((value) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}, z.number().int().min(min).max(max));
+
+const optionalUrl = z.preprocess((value) => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  try {
+    return new URL(trimmed).toString();
+  } catch {
+    return undefined;
+  }
+}, z.string().url().optional());
+
 const env = z.object({
-  BOT_TOKEN: z.string().min(1), DATABASE_URL: z.string().min(1), ADMIN_IDS: z.string().default(''),
-  OMNIROUTE_URL: z.string().url().default('http://127.0.0.1:20128'), OMNIROUTE_API_KEY: z.string().optional(), OMNIROUTE_MODEL: z.string().default('auto'), OMNIROUTE_TIMEOUT_MS: z.coerce.number().int().positive().default(45_000),
-  OMNIROUTE_GROUP_DEFAULT: z.string().optional(), OMNIROUTE_GROUP_STUDY: z.string().optional(), OMNIROUTE_GROUP_CASES: z.string().optional(), OMNIROUTE_GROUP_QUESTIONS: z.string().optional(), OMNIROUTE_GROUP_MINISTERIAL: z.string().optional(), OMNIROUTE_GROUP_EXAMS: z.string().optional(), OMNIROUTE_GROUP_SEARCH: z.string().optional(), OMNIROUTE_GROUP_ADMIN: z.string().optional(),
-  WEB_SEARCH_PROVIDER: z.enum(['firecrawl', 'none']).default('firecrawl'), FIRECRAWL_API_KEY: z.string().optional(), FIRECRAWL_SEARCH_TIMEOUT_MS: z.coerce.number().int().positive().default(12_000), FIRECRAWL_SEARCH_LIMIT: z.coerce.number().int().min(1).max(10).default(5),
-  MINI_APP_URL: z.string().url().optional(), MINI_APP_BOT_USERNAME: z.string().regex(/^@?[A-Za-z0-9_]{5,32}$/).optional(), MINI_APP_HOST: z.string().default('127.0.0.1'), MINI_APP_PORT: z.coerce.number().int().positive().default(3000),
-  PLUS_MONTH_STARS: z.coerce.number().int().positive().default(250), PRO_MONTH_STARS: z.coerce.number().int().positive().default(500), PLUS_5MONTH_STARS: z.coerce.number().int().positive().default(500), PRO_5MONTH_STARS: z.coerce.number().int().positive().default(1000), PLUS_YEAR_STARS: z.coerce.number().int().positive().default(1000), PRO_YEAR_STARS: z.coerce.number().int().positive().default(2000),
-  PAYMENT_PROVIDER: z.string().default('telegram_stars'), SUPPORT_HANDLE: z.string().default(''), MASTERCARD_ACCOUNT: z.string().default('8268627075'), ZAINCASH_NUMBER: z.string().default('07829774639'), CRYPTO_PAYMENT_NOTE: z.string().default('العملات الرقمية عبر محفظة تيليجرام — قريبًا.'), TRIAL_ENABLED: booleanFromEnv.default(true), TRIAL_DAYS: z.coerce.number().int().positive().default(7),
-  GOOGLE_DRIVE_ROOT_FOLDER_ID: z.string().optional(), GOOGLE_SERVICE_ACCOUNT_JSON: z.string().optional(), GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: z.string().optional(), DRIVE_AUTO_APPROVE: booleanFromEnv.default(true), DRIVE_CHUNK_CHARS: z.coerce.number().int().min(1000).max(20000).default(6000),
+  BOT_TOKEN: z.string().min(1),
+  DATABASE_URL: z.string().min(1),
+  ADMIN_IDS: z.string().default(''),
+
+  // Optional integrations must never prevent Telegram itself from starting.
+  OMNIROUTE_URL: optionalUrl.default('http://127.0.0.1:20128'),
+  OMNIROUTE_API_KEY: nonEmptyString,
+  OMNIROUTE_MODEL: z.string().default('auto'),
+  OMNIROUTE_TIMEOUT_MS: positiveInt(45_000),
+  OMNIROUTE_GROUP_DEFAULT: nonEmptyString,
+  OMNIROUTE_GROUP_STUDY: nonEmptyString,
+  OMNIROUTE_GROUP_CASES: nonEmptyString,
+  OMNIROUTE_GROUP_QUESTIONS: nonEmptyString,
+  OMNIROUTE_GROUP_MINISTERIAL: nonEmptyString,
+  OMNIROUTE_GROUP_EXAMS: nonEmptyString,
+  OMNIROUTE_GROUP_SEARCH: nonEmptyString,
+  OMNIROUTE_GROUP_ADMIN: nonEmptyString,
+
+  WEB_SEARCH_PROVIDER: z.preprocess((value) => {
+    if (typeof value !== 'string') return undefined;
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'firecrawl' || normalized === 'none' ? normalized : undefined;
+  }, z.enum(['firecrawl', 'none']).default('firecrawl')),
+  FIRECRAWL_API_KEY: nonEmptyString,
+  FIRECRAWL_SEARCH_TIMEOUT_MS: positiveInt(12_000),
+  FIRECRAWL_SEARCH_LIMIT: boundedInt(5, 1, 10),
+
+  MINI_APP_URL: optionalUrl,
+  MINI_APP_BOT_USERNAME: z.string().regex(/^@?[A-Za-z0-9_]{5,32}$/).optional(),
+  MINI_APP_HOST: z.string().default('127.0.0.1'),
+  MINI_APP_PORT: positiveInt(3000),
+
+  PLUS_MONTH_STARS: positiveInt(250),
+  PRO_MONTH_STARS: positiveInt(500),
+  PLUS_5MONTH_STARS: positiveInt(500),
+  PRO_5MONTH_STARS: positiveInt(1000),
+  PLUS_YEAR_STARS: positiveInt(1000),
+  PRO_YEAR_STARS: positiveInt(2000),
+
+  PAYMENT_PROVIDER: z.string().default('telegram_stars'),
+  SUPPORT_HANDLE: z.string().default(''),
+  MASTERCARD_ACCOUNT: z.string().default('8268627075'),
+  ZAINCASH_NUMBER: z.string().default('07829774639'),
+  CRYPTO_PAYMENT_NOTE: z.string().default('العملات الرقمية عبر محفظة تيليجرام — قريبًا.'),
+  TRIAL_ENABLED: booleanFromEnv.default(true),
+  TRIAL_DAYS: positiveInt(7),
+
+  GOOGLE_DRIVE_ROOT_FOLDER_ID: nonEmptyString,
+  GOOGLE_SERVICE_ACCOUNT_JSON: nonEmptyString,
+  GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: nonEmptyString,
+  DRIVE_AUTO_APPROVE: booleanFromEnv.default(true),
+  DRIVE_CHUNK_CHARS: boundedInt(6000, 1000, 20_000),
 }).parse(process.env);
-export const config = { ...env, adminIds: new Set(env.ADMIN_IDS.split(',').map((x) => x.trim()).filter(Boolean)) };
+
+export const config = {
+  ...env,
+  adminIds: new Set(env.ADMIN_IDS.split(',').map((x) => x.trim()).filter(Boolean)),
+};
