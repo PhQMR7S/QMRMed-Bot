@@ -7,19 +7,119 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Plan { FREE PLUS PRO @@map("qmr_plan") }
-enum AccessKind { FREE_TRIAL SUBSCRIPTION }
-enum QuestionType { MCQ TRUE_FALSE SHORT_ANSWER @@map("qmr_question_type") }
-enum ContentKind { SOURCE CASE QUESTION MINISTERIAL REFERENCE @@map("qmr_content_kind") }
-enum PaymentStatus { PENDING PAID REFUNDED FAILED @@map("qmr_payment_status") }
-enum FileStatus { RECEIVED DOWNLOADING EXTRACTING PARSING CHUNKING INDEXING ANALYZING READY FAILED CANCELLED DELETED }
-enum FileOperationStatus { QUEUED RUNNING COMPLETED FAILED CANCELLED }
-enum AIJobStatus { QUEUED RUNNING COMPLETED FAILED CANCELLED }
-enum AIJobType { FILE_INGESTION FILE_ANALYSIS FILE_RESULT EXAM_GENERATION PDF_GENERATION CONTENT_SYNC }
-enum FileOperationType { EXPLAIN SUMMARY QA MCQ TRUE_FALSE FILL_BLANK MATCHING CASES VIVA MIND_MAP FLOWCHART COMPARISON TIMELINE DIAGNOSTIC EXAM ASK_FILE }
-enum CitationKind { FILE_PAGE FILE_CHUNK EXTERNAL_SOURCE }
-enum EntitlementSource { SYSTEM TRIAL SUBSCRIPTION OVERRIDE }
-enum ExamSessionStatus { ACTIVE COMPLETED EXPIRED CANCELLED }
+enum Plan {
+  FREE
+  PLUS
+  PRO
+  @@map("qmr_plan")
+}
+
+enum AccessKind {
+  FREE_TRIAL
+  SUBSCRIPTION
+}
+
+enum QuestionType {
+  MCQ
+  TRUE_FALSE
+  SHORT_ANSWER
+  @@map("qmr_question_type")
+}
+
+enum ContentKind {
+  SOURCE
+  CASE
+  QUESTION
+  MINISTERIAL
+  REFERENCE
+  @@map("qmr_content_kind")
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+  FAILED
+  @@map("qmr_payment_status")
+}
+
+enum FileStatus {
+  RECEIVED
+  DOWNLOADING
+  EXTRACTING
+  PARSING
+  CHUNKING
+  INDEXING
+  ANALYZING
+  READY
+  FAILED
+  CANCELLED
+  DELETED
+}
+
+enum FileOperationStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum AIJobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum AIJobType {
+  FILE_INGESTION
+  FILE_ANALYSIS
+  FILE_RESULT
+  EXAM_GENERATION
+  PDF_GENERATION
+  CONTENT_SYNC
+}
+
+enum FileOperationType {
+  EXPLAIN
+  SUMMARY
+  QA
+  MCQ
+  TRUE_FALSE
+  FILL_BLANK
+  MATCHING
+  CASES
+  VIVA
+  MIND_MAP
+  FLOWCHART
+  COMPARISON
+  TIMELINE
+  DIAGNOSTIC
+  EXAM
+  ASK_FILE
+}
+
+enum CitationKind {
+  FILE_PAGE
+  FILE_CHUNK
+  EXTERNAL_SOURCE
+}
+
+enum EntitlementSource {
+  SYSTEM
+  TRIAL
+  SUBSCRIPTION
+  OVERRIDE
+}
+
+enum ExamSessionStatus {
+  ACTIVE
+  COMPLETED
+  EXPIRED
+  CANCELLED
+}
 
 model User {
   id Int @id @default(autoincrement())
@@ -61,6 +161,7 @@ model Subscription {
   active Boolean @default(true)
   createdAt DateTime @default(now())
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entitlements Entitlement[]
   @@index([userId, active])
   @@map("qmr_subscriptions")
 }
@@ -288,8 +389,10 @@ model File {
   analyses FileAnalysis[]
   jobs AIJob[]
   operations FileOperation[]
+  examSessions ExamSession[]
   @@unique([userId, sha256])
   @@index([userId, status, createdAt])
+  @@map("qmr_files")
 }
 
 model FilePage {
@@ -305,6 +408,7 @@ model FilePage {
   citations Citation[]
   @@unique([fileId, pageNumber])
   @@index([fileId, pageNumber])
+  @@map("qmr_file_pages")
 }
 
 model FileChunk {
@@ -323,6 +427,7 @@ model FileChunk {
   citations Citation[]
   @@unique([fileId, chunkIndex])
   @@index([fileId, pageStart, pageEnd])
+  @@map("qmr_file_chunks")
 }
 
 model FileAnalysis {
@@ -341,6 +446,7 @@ model FileAnalysis {
   jobs AIJob[]
   @@unique([fileId, version])
   @@index([fileId, createdAt])
+  @@map("qmr_file_analyses")
 }
 
 model AIJob {
@@ -374,6 +480,7 @@ model AIJob {
   @@unique([userId, idempotencyKey])
   @@index([status, availableAt])
   @@index([lockedAt, heartbeatAt])
+  @@map("qmr_ai_jobs")
 }
 
 model FileOperation {
@@ -398,6 +505,7 @@ model FileOperation {
   results FileResult[]
   @@unique([userId, requestKey])
   @@index([fileId, status, createdAt])
+  @@map("qmr_file_operations")
 }
 
 model FileResult {
@@ -413,6 +521,7 @@ model FileResult {
   citations Citation[]
   @@unique([operationId, version])
   @@index([operationId, createdAt])
+  @@map("qmr_file_results")
 }
 
 model Citation {
@@ -433,6 +542,7 @@ model Citation {
   @@index([resultId])
   @@index([pageId])
   @@index([chunkId])
+  @@map("qmr_citations")
 }
 
 model Entitlement {
@@ -451,6 +561,7 @@ model Entitlement {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
   @@index([userId, key, validUntil])
+  @@map("qmr_entitlements")
 }
 
 model ExamSession {
@@ -473,6 +584,7 @@ model ExamSession {
   questions ExamQuestion[]
   answers ExamAnswer[]
   @@index([userId, status, createdAt])
+  @@map("qmr_exam_sessions")
 }
 
 model ExamQuestion {
@@ -490,6 +602,7 @@ model ExamQuestion {
   answers ExamAnswer[]
   @@unique([sessionId, position])
   @@index([questionId])
+  @@map("qmr_exam_questions")
 }
 
 model ExamAnswer {
@@ -504,4 +617,5 @@ model ExamAnswer {
   question ExamQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
   @@unique([sessionId, questionId])
   @@index([sessionId, answeredAt])
+  @@map("qmr_exam_answers")
 }
