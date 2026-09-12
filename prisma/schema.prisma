@@ -7,220 +7,206 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Plan {
-  FREE
-  PLUS
-  PRO
-  @@map("qmr_plan")
-}
-
-enum AccessKind {
-  FREE_TRIAL
-  SUBSCRIPTION
-}
-
-enum QuestionType {
-  MCQ
-  TRUE_FALSE
-  SHORT_ANSWER
-  @@map("qmr_question_type")
-}
-
-enum ContentKind {
-  SOURCE
-  CASE
-  QUESTION
-  MINISTERIAL
-  REFERENCE
-  @@map("qmr_content_kind")
-}
-
-enum PaymentStatus {
-  PENDING
-  PAID
-  REFUNDED
-  FAILED
-  @@map("qmr_payment_status")
-}
+enum Plan { FREE PLUS PRO @@map("qmr_plan") }
+enum AccessKind { FREE_TRIAL SUBSCRIPTION }
+enum QuestionType { MCQ TRUE_FALSE SHORT_ANSWER @@map("qmr_question_type") }
+enum ContentKind { SOURCE CASE QUESTION MINISTERIAL REFERENCE @@map("qmr_content_kind") }
+enum PaymentStatus { PENDING PAID REFUNDED FAILED @@map("qmr_payment_status") }
+enum FileStatus { RECEIVED DOWNLOADING EXTRACTING PARSING CHUNKING INDEXING ANALYZING READY FAILED CANCELLED DELETED }
+enum FileOperationStatus { QUEUED RUNNING COMPLETED FAILED CANCELLED }
+enum AIJobStatus { QUEUED RUNNING COMPLETED FAILED CANCELLED }
+enum AIJobType { FILE_INGESTION FILE_ANALYSIS FILE_RESULT EXAM_GENERATION PDF_GENERATION CONTENT_SYNC }
+enum FileOperationType { EXPLAIN SUMMARY QA MCQ TRUE_FALSE FILL_BLANK MATCHING CASES VIVA MIND_MAP FLOWCHART COMPARISON TIMELINE DIAGNOSTIC EXAM ASK_FILE }
+enum CitationKind { FILE_PAGE FILE_CHUNK EXTERNAL_SOURCE }
+enum EntitlementSource { SYSTEM TRIAL SUBSCRIPTION OVERRIDE }
+enum ExamSessionStatus { ACTIVE COMPLETED EXPIRED CANCELLED }
 
 model User {
-  id              Int                        @id @default(autoincrement())
-  telegramId      String                     @unique
-  username        String?
-  firstName       String?
-  lastName        String?
-  stage           String?
-  department      String?
-  plan            Plan                       @default(FREE)
-  trialUsed       Boolean                    @default(false)
-  trialStartedAt  DateTime?
-  trialEndsAt     DateTime?
+  id Int @id @default(autoincrement())
+  telegramId String @unique
+  username String?
+  firstName String?
+  lastName String?
+  stage String?
+  department String?
+  plan Plan @default(FREE)
+  trialUsed Boolean @default(false)
+  trialStartedAt DateTime?
+  trialEndsAt DateTime?
   termsAcceptedAt DateTime?
-  createdAt       DateTime                   @default(now())
-  updatedAt       DateTime                   @updatedAt
-  progress        Progress[]
-  attempts        Attempt[]
-  subscriptions   Subscription[]
-  payments        PaymentTransaction[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  progress Progress[]
+  attempts Attempt[]
+  subscriptions Subscription[]
+  payments PaymentTransaction[]
   codeRedemptions ActivationCodeRedemption[]
-  fileAiArchives  FileAiArchive[]
+  fileAiArchives FileAiArchive[]
+  files File[]
+  aiJobs AIJob[]
+  fileOperations FileOperation[]
+  entitlements Entitlement[]
+  examSessions ExamSession[]
   @@map("qmr_users")
 }
 
 model Subscription {
-  id         Int      @id @default(autoincrement())
-  userId     Int
-  plan       Plan
-  provider   String
+  id Int @id @default(autoincrement())
+  userId Int
+  plan Plan
+  provider String
   externalId String?
-  startsAt   DateTime
-  endsAt     DateTime
-  active     Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startsAt DateTime
+  endsAt DateTime
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId, active])
   @@map("qmr_subscriptions")
 }
 
 model PaymentTransaction {
-  id                      Int           @id @default(autoincrement())
-  userId                  Int
-  plan                    Plan
-  provider                String
-  currency                String
-  amount                  Int
-  payload                 String
-  telegramPaymentChargeId String?       @unique
+  id Int @id @default(autoincrement())
+  userId Int
+  plan Plan
+  provider String
+  currency String
+  amount Int
+  payload String
+  telegramPaymentChargeId String? @unique
   providerPaymentChargeId String?
-  status                  PaymentStatus @default(PENDING)
-  createdAt               DateTime      @default(now())
-  updatedAt               DateTime      @updatedAt
-  user                    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status PaymentStatus @default(PENDING)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId, status])
   @@index([payload])
   @@map("qmr_payment_transactions")
 }
 
 model ActivationCode {
-  id                  Int                        @id @default(autoincrement())
-  code                String                     @unique
-  plan                Plan
-  durationDays        Int
-  maxUses             Int                        @default(1)
-  usedCount           Int                        @default(0)
-  active              Boolean                    @default(true)
-  expiresAt           DateTime?
+  id Int @id @default(autoincrement())
+  code String @unique
+  plan Plan
+  durationDays Int
+  maxUses Int @default(1)
+  usedCount Int @default(0)
+  active Boolean @default(true)
+  expiresAt DateTime?
   createdByTelegramId String
-  createdAt            DateTime                   @default(now())
-  redemptions         ActivationCodeRedemption[]
+  createdAt DateTime @default(now())
+  redemptions ActivationCodeRedemption[]
   @@index([active, plan])
   @@map("qmr_activation_codes")
 }
 
 model ActivationCodeRedemption {
-  id         Int            @id @default(autoincrement())
-  codeId     Int
-  userId     Int
-  redeemedAt DateTime       @default(now())
-  code       ActivationCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
-  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id Int @id @default(autoincrement())
+  codeId Int
+  userId Int
+  redeemedAt DateTime @default(now())
+  code ActivationCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([codeId, userId])
   @@index([userId, redeemedAt])
   @@map("qmr_activation_code_redemptions")
 }
 
 model Subject {
-  id          Int            @id @default(autoincrement())
-  name        String
-  code        String         @unique
+  id Int @id @default(autoincrement())
+  name String
+  code String @unique
   description String?
-  order       Int            @default(0)
-  topics      Topic[]
-  questions   Question[]
-  content     ContentChunk[]
+  order Int @default(0)
+  topics Topic[]
+  questions Question[]
+  content ContentChunk[]
   @@map("qmr_subjects")
 }
 
 model Topic {
-  id        Int      @id @default(autoincrement())
+  id Int @id @default(autoincrement())
   subjectId Int
-  name      String
-  order     Int      @default(0)
-  subject   Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  lessons   Lesson[]
+  name String
+  order Int @default(0)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  lessons Lesson[]
   @@map("qmr_topics")
 }
 
 model Lesson {
-  id            Int           @id @default(autoincrement())
-  topicId       Int
-  title         String
-  content       String
-  source        String?
-  sourceId      Int?
-  order         Int           @default(0)
-  topic         Topic         @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  id Int @id @default(autoincrement())
+  topicId Int
+  title String
+  content String
+  source String?
+  sourceId Int?
+  order Int @default(0)
+  topic Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
   contentSource ContentSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
   @@map("qmr_lessons")
 }
 
 model Question {
-  id            Int            @id @default(autoincrement())
-  subjectId     Int
-  text          String
-  explanation   String?
-  type          QuestionType   @default(MCQ)
-  isMinisterial Boolean        @default(false)
-  difficulty    Int            @default(1)
-  options       Json?
-  answer        String
-  source        String?
-  sourceId      Int?
-  subject       Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  id Int @id @default(autoincrement())
+  subjectId Int
+  text String
+  explanation String?
+  type QuestionType @default(MCQ)
+  isMinisterial Boolean @default(false)
+  difficulty Int @default(1)
+  options Json?
+  answer String
+  source String?
+  sourceId Int?
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   contentSource ContentSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
-  attempts      Attempt[]
+  attempts Attempt[]
+  examQuestions ExamQuestion[]
   @@index([subjectId, isMinisterial])
   @@map("qmr_questions")
 }
 
 model ContentSource {
-  id           Int            @id @default(autoincrement())
-  driveFileId  String         @unique
-  name         String
-  mimeType     String
-  webViewLink  String?
+  id Int @id @default(autoincrement())
+  driveFileId String @unique
+  name String
+  mimeType String
+  webViewLink String?
   modifiedTime DateTime?
-  checksum     String?
-  kind         ContentKind    @default(SOURCE)
-  department   String?
-  stage        String?
-  subjectName  String?
-  approved     Boolean        @default(false)
-  indexed      Boolean        @default(false)
+  checksum String?
+  kind ContentKind @default(SOURCE)
+  department String?
+  stage String?
+  subjectName String?
+  approved Boolean @default(false)
+  indexed Boolean @default(false)
   lastSyncedAt DateTime?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  chunks       ContentChunk[]
-  lessons      Lesson[]
-  questions    Question[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  chunks ContentChunk[]
+  lessons Lesson[]
+  questions Question[]
   @@index([approved, kind])
   @@index([department, stage, subjectName])
   @@map("qmr_content_sources")
 }
 
 model ContentChunk {
-  id          Int           @id @default(autoincrement())
-  sourceId    Int
-  subjectId   Int?
-  kind        ContentKind
-  title       String
-  text        String
-  chunkIndex  Int           @default(0)
+  id Int @id @default(autoincrement())
+  sourceId Int
+  subjectId Int?
+  kind ContentKind
+  title String
+  text String
+  chunkIndex Int @default(0)
   driveFileId String
-  source      ContentSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  subject     Subject?      @relation(fields: [subjectId], references: [id], onDelete: SetNull)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  pageStart Int?
+  pageEnd Int?
+  source ContentSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   @@unique([driveFileId, chunkIndex])
   @@index([sourceId, kind])
   @@index([subjectId, kind])
@@ -228,50 +214,294 @@ model ContentChunk {
 }
 
 model DriveSyncState {
-  id           Int       @id @default(autoincrement())
-  rootFolderId String    @unique
-  lastRunAt    DateTime?
+  id Int @id @default(autoincrement())
+  rootFolderId String @unique
+  lastRunAt DateTime?
   lastSuccessAt DateTime?
-  lastError    String?
-  filesSeen    Int       @default(0)
-  filesIndexed Int       @default(0)
-  updatedAt    DateTime  @updatedAt
+  lastError String?
+  filesSeen Int @default(0)
+  filesIndexed Int @default(0)
+  updatedAt DateTime @updatedAt
   @@map("qmr_drive_sync_states")
 }
 
 model FileAiArchive {
-  id            String   @id
-  userId        Int
-  sourceName    String
-  mimeType      String
-  operation     String
+  id String @id
+  userId Int
+  sourceName String
+  mimeType String
+  operation String
   sourceTextGzip Bytes
-  result        String
-  createdAt     DateTime @default(now())
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  result String
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId, createdAt])
   @@map("qmr_file_ai_archives")
 }
 
 model Attempt {
-  id         Int      @id @default(autoincrement())
-  userId     Int
+  id Int @id @default(autoincrement())
+  userId Int
   questionId Int
-  answer     String
-  correct    Boolean
-  createdAt  DateTime @default(now())
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answer String
+  correct Boolean
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
   @@map("qmr_attempts")
 }
 
 model Progress {
-  id        Int      @id @default(autoincrement())
-  userId    Int
-  lessonId  Int
-  completed Boolean  @default(false)
+  id Int @id @default(autoincrement())
+  userId Int
+  lessonId Int
+  completed Boolean @default(false)
   updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([userId, lessonId])
   @@map("qmr_progress")
+}
+
+model File {
+  id String @id
+  userId Int
+  originalName String
+  mimeType String
+  sizeBytes BigInt
+  sha256 String
+  status FileStatus @default(RECEIVED)
+  storageKey String
+  pageCount Int?
+  extractedChars Int @default(0)
+  contentFingerprint String?
+  metadata Json?
+  errorCode String?
+  errorMessage String?
+  receivedAt DateTime @default(now())
+  readyAt DateTime?
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pages FilePage[]
+  chunks FileChunk[]
+  analyses FileAnalysis[]
+  jobs AIJob[]
+  operations FileOperation[]
+  @@unique([userId, sha256])
+  @@index([userId, status, createdAt])
+}
+
+model FilePage {
+  id String @id
+  fileId String
+  pageNumber Int
+  text String
+  charCount Int @default(0)
+  contentHash String?
+  metadata Json?
+  file File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  chunks FileChunk[]
+  citations Citation[]
+  @@unique([fileId, pageNumber])
+  @@index([fileId, pageNumber])
+}
+
+model FileChunk {
+  id String @id
+  fileId String
+  pageId String?
+  chunkIndex Int
+  text String
+  charCount Int @default(0)
+  pageStart Int?
+  pageEnd Int?
+  contentHash String?
+  metadata Json?
+  file File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  page FilePage? @relation(fields: [pageId], references: [id], onDelete: SetNull)
+  citations Citation[]
+  @@unique([fileId, chunkIndex])
+  @@index([fileId, pageStart, pageEnd])
+}
+
+model FileAnalysis {
+  id String @id
+  fileId String
+  version Int
+  summary String
+  topicMap Json?
+  documentMap Json?
+  evidenceIndex Json?
+  language String?
+  model String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  file File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  jobs AIJob[]
+  @@unique([fileId, version])
+  @@index([fileId, createdAt])
+}
+
+model AIJob {
+  id String @id
+  userId Int
+  fileId String?
+  analysisId String?
+  type AIJobType
+  status AIJobStatus @default(QUEUED)
+  idempotencyKey String
+  attempts Int @default(0)
+  maxAttempts Int @default(3)
+  progress Int @default(0)
+  stage String?
+  payload Json?
+  result Json?
+  errorCode String?
+  errorMessage String?
+  availableAt DateTime @default(now())
+  lockedAt DateTime?
+  lockedBy String?
+  heartbeatAt DateTime?
+  startedAt DateTime?
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  file File? @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  analysis FileAnalysis? @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  operations FileOperation[]
+  @@unique([userId, idempotencyKey])
+  @@index([status, availableAt])
+  @@index([lockedAt, heartbeatAt])
+}
+
+model FileOperation {
+  id String @id
+  userId Int
+  fileId String
+  jobId String?
+  type FileOperationType
+  status FileOperationStatus @default(QUEUED)
+  requestKey String
+  parameters Json?
+  progress Int @default(0)
+  startedAt DateTime?
+  completedAt DateTime?
+  errorCode String?
+  errorMessage String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  file File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  job AIJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  results FileResult[]
+  @@unique([userId, requestKey])
+  @@index([fileId, status, createdAt])
+}
+
+model FileResult {
+  id String @id
+  operationId String
+  version Int
+  title String
+  content String
+  structured Json?
+  model String?
+  createdAt DateTime @default(now())
+  operation FileOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  citations Citation[]
+  @@unique([operationId, version])
+  @@index([operationId, createdAt])
+}
+
+model Citation {
+  id String @id
+  resultId String
+  kind CitationKind
+  pageId String?
+  chunkId String?
+  sourceName String?
+  sourceUrl String?
+  quote String?
+  pageNumber Int?
+  locator String?
+  createdAt DateTime @default(now())
+  result FileResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  page FilePage? @relation(fields: [pageId], references: [id], onDelete: SetNull)
+  chunk FileChunk? @relation(fields: [chunkId], references: [id], onDelete: SetNull)
+  @@index([resultId])
+  @@index([pageId])
+  @@index([chunkId])
+}
+
+model Entitlement {
+  id String @id
+  userId Int
+  subscriptionId Int?
+  key String
+  valueInt Int?
+  valueBool Boolean?
+  valueText String?
+  source EntitlementSource
+  validFrom DateTime @default(now())
+  validUntil DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  @@index([userId, key, validUntil])
+}
+
+model ExamSession {
+  id String @id
+  userId Int
+  fileId String?
+  title String
+  status ExamSessionStatus @default(ACTIVE)
+  questionCount Int
+  currentIndex Int @default(0)
+  score Int @default(0)
+  startedAt DateTime @default(now())
+  expiresAt DateTime
+  completedAt DateTime?
+  metadata Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  file File? @relation(fields: [fileId], references: [id], onDelete: SetNull)
+  questions ExamQuestion[]
+  answers ExamAnswer[]
+  @@index([userId, status, createdAt])
+}
+
+model ExamQuestion {
+  id String @id
+  sessionId String
+  position Int
+  questionId Int?
+  prompt String
+  options Json?
+  correct String
+  explanation String?
+  metadata Json?
+  session ExamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  question Question? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+  answers ExamAnswer[]
+  @@unique([sessionId, position])
+  @@index([questionId])
+}
+
+model ExamAnswer {
+  id String @id
+  sessionId String
+  questionId String
+  answer String
+  isCorrect Boolean
+  answeredAt DateTime @default(now())
+  elapsedMs Int?
+  session ExamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  question ExamQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  @@unique([sessionId, questionId])
+  @@index([sessionId, answeredAt])
 }
